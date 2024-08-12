@@ -24,7 +24,6 @@ static double errorArea = 100;
 static double tolerancia = 0; // tolerancia para que una caja esté dentro de polígono
 static auto tIni = chrono::high_resolution_clock::now();
 static double duracion = 0;
-int maxIter = 500;
 //int holi = 0;
 static int ContenedorDimx = 0;
 static int ContenedorDimy = 0;
@@ -36,7 +35,7 @@ static int r_juntarEspacios = 0; // 0: Sin juntar ni expandir, 1: juntando sin e
 static bool r_maxPresionItems = false; // 0: No hay restricción, 1: si hay restricción
 static int r_multidrop = 0; // 0: No hay restricción, 1: Visibilidad, 2: Capas con 0 (Junqueira con d_i = 0)
 
-static int maxNBloques = 1000; // Número máximo de bloques que se generan
+static int maxNBloques = 500; // Número máximo de bloques que se generan
 
 class Alpha {
 public:
@@ -852,12 +851,13 @@ public:
         deltaMasa = s.deltaMasa;
         masaMax = s.masaMax;
     }
-    Soporte(int const& p_indPB, double const& p_area, double const& p_cx, double const& p_cy, double const& p_presion) {
+    Soporte(int const& p_indPB, int const& p_area, double const& p_cx, double const& p_cy, double const& p_presion) {
         indPB = p_indPB;
-        area = p_area;
+        area = (double)p_area;
         centrox = p_cx;
         centroy = p_cy;
-        masaMax = p_presion * p_area;
+        masaMax = p_presion * area;
+        masaSoporte = 0;
         deltaMasa = 0;
     }
 
@@ -1078,7 +1078,6 @@ public:
     double centroMasax, centroMasay;
     vector<Soporte> soportes; // Cajas debajo de esta
     Poligono poligono;
-    bool soportada;
 
     // Constructor
 
@@ -1102,98 +1101,20 @@ public:
         centroMasax = p.centroMasax;
         centroMasay = p.centroMasay;
         poligono = p.poligono;
-        soportada = p.soportada;
         soportes = p.soportes;
     }
     PackedBox(int const& p_ind, Bloque& bloque, BloqueAux const& bloqueAux) { // Se usa para empacar cuando no hay presion
         Inicializar(p_ind, bloque, bloqueAux);
     }
-    PackedBox(int const& p_ind, Bloque& bloque, BloqueAux const& bloqueAux, vector<PackedBox> const& pbs) { // Se usa para empacar cuando si hay presion
+    PackedBox(int const& p_ind, Bloque& bloque, BloqueAux const& bloqueAux, double const& cmx, double const& cmy, Poligono const& p_pol, vector<Soporte> const& p_soportes) {
         Inicializar(p_ind, bloque, bloqueAux);
-        if (z1 == 0) {
-            soportada = true;
-            return;
-        }
-
-        // Determinar centro de masa
-
-        centroMasax = (double)(x2 + x1) / 2.0;
-        centroMasay = (double)(y2 + y1) / 2.0;
-        if (!r_maxPresionItems) {
-            vector<Point> intersecciones; intersecciones.reserve(4 * pbs.size());
-            for (vector<int>::iterator idPB = bloque.indPB_EM.begin(); idPB < bloque.indPB_EM.end(); ++idPB) {
-                PackedBox p = pbs[*idPB];
-                if (!(x1 >= p.x2 || p.x1 >= x2)) {
-                    if (!(y1 >= p.y2 || p.y1 >= y2)) {
-
-                        // Se encuentran los puntos de intersección
-
-                        vector<int> misx({ x1, x2, p.x1, p.x2 });
-                        sort(misx.begin(), misx.end());
-                        vector<int> misy({ y1, y2, p.y1, p.y2 });
-                        sort(misy.begin(), misy.end());
-                        intersecciones.push_back(Point(misx[1], misy[1]));
-                        intersecciones.push_back(Point(misx[2], misy[1]));
-                        intersecciones.push_back(Point(misx[1], misy[2]));
-                        intersecciones.push_back(Point(misx[2], misy[2]));
-                    }
-                }
-            }
-
-            // Determinar polígono
-
-            if (intersecciones.size() > 0) {
-                poligono = Poligono(intersecciones);
-                if (poligono.puntoDentroPoligono(centroMasax, centroMasay)) {
-                    soportada = true;
-                }
-                else soportada = false;
-            }
-            else soportada = false;
-        }
-        else {
-
-            // Determinar soportes
-
-            soportes.reserve(bloque.indPB_EM.size());
-            vector<Point> intersecciones;
-            for (vector<int>::iterator idPB = bloque.indPB_EM.begin(); idPB < bloque.indPB_EM.end(); ++idPB) {
-                PackedBox p = pbs[*idPB];
-                if (!(x1 >= p.x2 || p.x1 >= x2)) {
-                    if (!(y1 >= p.y2 || p.y1 >= y2)) {
-
-                        // Se encuentran los puntos de intersección
-
-                        vector<int> misx({ x1, x2, p.x1, p.x2 });
-                        sort(misx.begin(), misx.end());
-                        vector<int> misy({ y1, y2, p.y1, p.y2 });
-                        sort(misy.begin(), misy.end());
-                        intersecciones.push_back(Point(misx[1], misy[1]));
-                        intersecciones.push_back(Point(misx[2], misy[1]));
-                        intersecciones.push_back(Point(misx[1], misy[2]));
-                        intersecciones.push_back(Point(misx[2], misy[2]));
-
-                        // Se determina el soporte
-
-                        soportes.push_back(Soporte(*idPB, (double)(misx[2] - misx[1]) * (double)(misy[2] - misy[1]), (double)(misx[2] + misx[1]) / 2.0f, (double)(misy[2] + misy[1]) / 2.0f, p.presion));
-                    }
-                }
-            }
-
-            // Determinar polígono
-
-            if (intersecciones.size() > 0) {
-                poligono = Poligono(intersecciones);
-                if (poligono.puntoDentroPoligono(centroMasax, centroMasay)) {
-                    masaTotal = masa;
-                    ActualizarSoportes();
-                }
-                else soportada = false;
-            }
-            else soportada = false;
-        }
+        masaTotal = masa;
+        centroMasax = cmx;
+        centroMasay = cmy;
+        poligono = p_pol;
+        soportes = p_soportes;
     }
-
+    
     // Metodos
 
     void ActualizarCentroDeMasa(Soporte const& s) {
@@ -1202,45 +1123,22 @@ public:
         centroMasay = (masaTotal * centroMasay + s.deltaMasa * s.centroy) / newMasaTotal;
         masaTotal = newMasaTotal;
     }
-    void ActualizarSoportes() {
+    bool ActualizarSoportes() {
         vector<double> resp;
         ObtenerEcuacionesSoporte(resp);
         int i = 0;
         for (vector<Soporte>::iterator s = soportes.begin(); s < soportes.end(); ++s, ++i) {
-            (*s).masaSoporte = resp[i];
+            (*s).ActualizarSoporte(resp[i]);
+
             if (!(*s).SiSeSoporta()) {
-                soportada = false;
-                return;
+                return false;
             }
         }
-        soportada = true;
+        return true;
     }
-    void centroMasaEnPoligono() {
-        soportada = poligono.puntoDentroPoligono(centroMasax, centroMasay);
+    bool centroMasaEnPoligono() {
+        return poligono.puntoDentroPoligono(centroMasax, centroMasay);
     }
-    void DeterminarSoportes(vector<int>& indicesPB, vector<PackedBox> const& pbs) {
-        soportes.clear();
-        soportes.reserve(indicesPB.size());
-        for (vector<int>::iterator idPB = indicesPB.begin(); idPB < indicesPB.end(); ++idPB) {
-            PackedBox p = pbs[*idPB];
-            if (!(x1 >= p.x2 || p.x1 >= x2)) {
-                if (!(y1 >= p.y2 || p.y1 >= y2)) {
-
-                    // Se encuentran los puntos de intersección
-
-                    vector<int> misx({ x1, x2, p.x1, p.x2 });
-                    sort(misx.begin(), misx.end());
-                    vector<int> misy({ y1, y2, p.y1, p.y2 });
-                    sort(misy.begin(), misy.end());
-
-                    // Se determina el soporte
-
-                    soportes.push_back(Soporte(*idPB, (double)(misx[2] - misx[1]) * (double)(misy[2] - misy[1]), (double)(misx[2] + misx[1]) / 2.0f, (double)(misy[2] + misy[1]) / 2.0f, p.presion));
-                }
-            }
-        }
-    }
-
 private:
 
     void Inicializar(int const& p_ind, Bloque& bloque, BloqueAux const& bloqueAux) {
@@ -1301,15 +1199,7 @@ private:
                     A.back()[j] = -1.0f / (*s_it2).area;
                 }
             }
-            /*
-            double miA1 = soportes.front().area;
-            int i = 1;
-            for (vector<Soporte>::iterator s_it = soportes.begin() + 1; s_it < soportes.end(); ++s_it, ++i) {
-                A.push_back(vector<double>(nColumnas,0));
-                A.back()[0] = 1.0f / miA1;
-                A.back()[i] = -1.0f / (*s_it).area;
-            }
-            */
+
             // Eliminación gaussiana 2
 
             GaussianElimination2(A, resp);
@@ -2266,6 +2156,7 @@ private:
                 if (e.x2 <= x0) espacios.erase(espacios.begin() + i);
                 else {
                     e.x1 = x0;
+                    e.dx = e.x2 - e.x1;
                     e.DeterminarEsquina();
                 }
             }
@@ -2276,6 +2167,7 @@ private:
                 if (e.x2 <= x0) espacios.erase(espacios.begin() + i);
                 else {
                     e.x1 = x0;
+                    e.dx = e.x2 - e.x1;
                     e.cambio = true;
                     e.DeterminarEsquina();
                 }
@@ -2382,73 +2274,223 @@ private:
         return r;
     }
     bool BloqueSoportadoPoligono(Bloque& b) {
-        for (vector<BloqueAux>::iterator b_it = b.cajas.begin(); b_it < b.cajas.end(); ++b_it) {
-            if ((*b_it).z1 == b.z1) {
-                PackedBox Pieza = PackedBox(0, b, *b_it, empacados);
-                if (!Pieza.soportada) return false;
+        if (b.z1 > 0) {
+            for (vector<BloqueAux>::iterator b_it = b.cajas.begin(); b_it < b.cajas.end(); ++b_it) {
+                if ((*b_it).z1 == b.z1) { // solo se verifica las cajas de abajo
+                    double centroMasax = (double)((*b_it).x1 + (double)b.b.x / 2.0);
+                    double centroMasay = (double)((*b_it).y1 + (double)b.b.y / 2.0);
+                    vector<Point> intersecciones;
+                    intersecciones.reserve(4 * b.indPB_EM.size());
+                    for (vector<int>::iterator idPB = b.indPB_EM.begin(); idPB < b.indPB_EM.end(); ++idPB) {
+                        PackedBox& p = empacados[*idPB];
+                        if (!((*b_it).x1 >= p.x2 || p.x1 >= (*b_it).x1 + b.b.x)) {
+                            if (!((*b_it).y1 >= p.y2 || p.y1 >= (*b_it).y1 + b.b.y)) {
+
+                                // Se encuentran los puntos de intersección
+
+                                vector<int> misx({ (*b_it).x1, (*b_it).x1 + b.b.x, p.x1, p.x2 });
+                                sort(misx.begin(), misx.end());
+                                vector<int> misy({ (*b_it).y1, (*b_it).y1 + b.b.y, p.y1, p.y2 });
+                                sort(misy.begin(), misy.end());
+                                intersecciones.push_back(Point(misx[1], misy[1]));
+                                intersecciones.push_back(Point(misx[2], misy[1]));
+                                intersecciones.push_back(Point(misx[1], misy[2]));
+                                intersecciones.push_back(Point(misx[2], misy[2]));
+                            }
+                        }
+                    }
+                    
+                    // Determinar polígono
+
+                    if (intersecciones.size() > 0) {
+                        Poligono poligono(intersecciones);
+                        if (!poligono.puntoDentroPoligono(centroMasax, centroMasay)) {
+                            return false;
+                        }
+                    }
+                    else return false;
+                }
             }
         }
         return true;
     }
     bool BloqueSoportadoPresion(Bloque& b) {
 
-        // Generar las piezas empacadas
+        // Generar las piezas empacadas y se inicializan los soportes de las cajas más arriba
 
-        vector<PackedBox> copias = empacados;
-        copias.reserve(copias.size() + b.cajas.size());
+        vector<PackedBox> copias;
+        copias.reserve(empacados.size() + b.cajas.size());
         for (vector<BloqueAux>::iterator b_it = b.cajas.begin(); b_it < b.cajas.end(); ++b_it) {
             if ((*b_it).z1 == b.z1) {
-                copias.push_back(PackedBox(copias.size(), b, *b_it, copias));
+                if (b.z1 == 0) {
+                    copias.push_back(PackedBox(copias.size() + empacados.size(), b, *b_it));
+                }
+                else {
+                    double centroMasax = (double)((*b_it).x1 + (double)b.b.x / 2.0);
+                    double centroMasay = (double)((*b_it).y1 + (double)b.b.y / 2.0);
+                    vector<Point> intersecciones;
+                    intersecciones.reserve(4 * b.indPB_EM.size());
+                    vector<Soporte> misSoportes; misSoportes.reserve(b.indPB_EM.size());
+                    for (vector<int>::iterator idPB = b.indPB_EM.begin(); idPB < b.indPB_EM.end(); ++idPB) {
+                        PackedBox& p = empacados[*idPB];
+                        if (!((*b_it).x1 >= p.x2 || p.x1 >= (*b_it).x1 + b.b.x)) {
+                            if (!((*b_it).y1 >= p.y2 || p.y1 >= (*b_it).y1 + b.b.y)) {
+
+                                // Se encuentran los puntos de intersección
+
+                                vector<int> misx({ (*b_it).x1, (*b_it).x1 + b.b.x, p.x1, p.x2 });
+                                sort(misx.begin(), misx.end());
+                                vector<int> misy({ (*b_it).y1, (*b_it).y1 + b.b.y, p.y1, p.y2 });
+                                sort(misy.begin(), misy.end());
+                                intersecciones.push_back(Point(misx[1], misy[1]));
+                                intersecciones.push_back(Point(misx[2], misy[1]));
+                                intersecciones.push_back(Point(misx[1], misy[2]));
+                                intersecciones.push_back(Point(misx[2], misy[2]));
+
+                                // Se crea el soporte
+
+                                misSoportes.push_back(Soporte(*idPB, (misx[2] - misx[1]) * (misy[2] - misy[1]), (double)(misx[2] + misx[1]) / 2.0f, (double)(misy[2] + misy[1]) / 2.0f, p.presion));
+                            }
+                        }
+                    }
+
+                    // Determinar polígono
+
+                    if (intersecciones.size() > 0) {
+                        Poligono poligono(intersecciones);
+                        if (!poligono.puntoDentroPoligono(centroMasax, centroMasay)) {
+                            return false;
+                        }
+                        copias.push_back(PackedBox(copias.size() + empacados.size(), b, *b_it, centroMasax, centroMasay, poligono, misSoportes));
+                        if (copias.back().z2 == b.z2 && copias.back().z1 > 0) {
+                            if (!copias.back().ActualizarSoportes()) {
+                                return false;
+                            }
+                        }
+                    }
+                    else return false;
+                }
             }
             else {
-                vector<int> indEM;
-                for (vector<PackedBox>::iterator p_it = copias.begin() + empacados.size(); p_it < copias.end(); ++p_it) {
-                    if ((*b_it).z1 == (*p_it).z2) indEM.push_back((*p_it).ind);
+                double centroMasax = (double)((*b_it).x1 + (double)b.b.x / 2.0);
+                double centroMasay = (double)((*b_it).y1 + (double)b.b.y / 2.0);
+                vector<Point> intersecciones;
+                intersecciones.reserve(4 * b.indPB_EM.size());
+                vector<Soporte> misSoportes; misSoportes.reserve(b.indPB_EM.size());
+                for (vector<PackedBox>::iterator p_it = copias.begin(); p_it < copias.end(); ++p_it) {
+                    if ((*p_it).z2 == (*b_it).z1) {
+                        if (!((*b_it).x1 >= (*p_it).x2 || (*p_it).x1 >= (*b_it).x1 + b.b.x)) {
+                            if (!((*b_it).y1 >= (*p_it).y2 || (*p_it).y1 >= (*b_it).y1 + b.b.y)) {
+
+                                // Se encuentran los puntos de intersección
+
+                                vector<int> misx({ (*b_it).x1, (*b_it).x1 + b.b.x, (*p_it).x1, (*p_it).x2 });
+                                sort(misx.begin(), misx.end());
+                                vector<int> misy({ (*b_it).y1, (*b_it).y1 + b.b.y, (*p_it).y1, (*p_it).y2 });
+                                sort(misy.begin(), misy.end());
+                                intersecciones.push_back(Point(misx[1], misy[1]));
+                                intersecciones.push_back(Point(misx[2], misy[1]));
+                                intersecciones.push_back(Point(misx[1], misy[2]));
+                                intersecciones.push_back(Point(misx[2], misy[2]));
+
+                                // Se crea el soporte
+
+                                misSoportes.push_back(Soporte((*p_it).ind, (misx[2] - misx[1]) * (misy[2] - misy[1]), (double)(misx[2] + misx[1]) / 2.0f, (double)(misy[2] + misy[1]) / 2.0f, (*p_it).presion));
+                            }
+                        }
+                    }
                 }
-                copias.push_back(PackedBox(copias.size(), b, *b_it, copias));
+
+                // Determinar polígono
+
+                if (intersecciones.size() > 0) {
+                    Poligono poligono(intersecciones);
+                    copias.push_back(PackedBox(copias.size(), b, *b_it, centroMasax, centroMasay, poligono, misSoportes));
+                    if (copias.back().z2 == b.z2 && copias.back().z1 > 0) {
+                        if (!copias.back().ActualizarSoportes()) {
+                            return false;
+                        }
+                    }
+                }
+                else return false;
             }
         }
 
         // Determinar arbol de actualización
 
-        vector<PackedBox> arbol; arbol.reserve(copias.size());
-        for (vector<PackedBox>::iterator p_it = copias.begin() + empacados.size(); p_it < copias.end(); ++p_it) {
-            arbol.push_back(*p_it);
-            if (!arbol.back().soportada) return false;
-        }
-        sort(arbol.begin(), arbol.end(), [](PackedBox const& p1, PackedBox const& p2)->bool {return p1.z1 > p2.z1; });
-        int z1Actual = arbol.front().z1;
-        int i = 0;
-        PackedBox ai = arbol.front();
-        int ini = 0;
-        while (ai.z1 > 0) {
-            for (vector<Soporte>::iterator s_it = ai.soportes.begin(); s_it < ai.soportes.end(); ++s_it) {
-                bool yaEsta = false;
-                for (vector<PackedBox>::iterator p_it = arbol.begin() + i; p_it < arbol.end(); ++p_it) {
-                    if ((*p_it).ind == (*s_it).indPB) {
-                        yaEsta = true;
-                        break;
+        if (b.z1 > 0) {
+            int hasta = copias.size();
+            for (int i = 0; i < hasta; ++i) {
+                PackedBox c = copias[i];
+                if (c.z1 == b.z1) {
+                    int siguiente = copias.size(); 
+                    while (c.z1 > 0) {
+                        for (vector<Soporte>::iterator s_it = c.soportes.begin(); s_it < c.soportes.end(); ++s_it) {
+                            bool nuevaPieza = true;
+                            for (vector<PackedBox>::iterator p_it = copias.begin() + hasta; p_it < copias.end(); ++p_it) {
+                                if ((*s_it).indPB == (*p_it).ind) {
+                                    nuevaPieza = false;
+                                    break;
+                                }
+                            }
+                            if (nuevaPieza) {
+                                copias.push_back(empacados[(*s_it).indPB]);
+                            }
+                        }
+                        if (siguiente < copias.size()) {
+                            for (; siguiente < copias.size(); ++siguiente) {
+                                c = copias[siguiente];
+                                if (c.z1 > 0) break;
+                            }
+                            ++siguiente;
+                        }
+                        else break;
                     }
                 }
-                if (!yaEsta) {
-                    arbol.push_back(copias[(*s_it).indPB]);
-                    arbol.back().ActualizarCentroDeMasa(*s_it);
+            }
+        }
+        sort(copias.begin(), copias.end(), [](PackedBox const& p1, PackedBox const& p2)->bool {return p1.z1 > p2.z1; });
+
+        // Actualizar árbol
+
+        int z1Ini = copias.front().z1;
+        for (vector<PackedBox>::iterator p_it = copias.begin(); p_it < copias.end(); ++p_it) {
+            if (z1Ini == (*p_it).z1) {
+                for (vector<Soporte>::iterator s_it = (*p_it).soportes.begin(); s_it < (*p_it).soportes.end(); ++s_it) {
+
+                    // Actualizar soporte
+
+                    vector<PackedBox>::iterator p_it2 = p_it + 1;
+                    for (; p_it2 < copias.end(); ++p_it2) {
+                        if ((*p_it2).ind == (*s_it).indPB) {
+                            (*p_it2).ActualizarCentroDeMasa(*s_it);
+                            break;
+                        }
+                    }
                 }
             }
-            ++i;
-            ai = arbol[i];
-            if (ai.z1 != z1Actual) {
-                sort(arbol.begin() + ini, arbol.end(), [](PackedBox const& p1, PackedBox const& p2)->bool {return p1.z1 > p2.z1; });
-                for (vector<PackedBox>::iterator p_it = arbol.begin() + ini; p_it < arbol.begin() + i; ++p_it) {
-                    (*p_it).centroMasaEnPoligono();
-                    if (!(*p_it).soportada) return false;
-                    (*p_it).ActualizarSoportes();
-                    if (!(*p_it).soportada) return false;
+            else {
+                for (vector<PackedBox>::iterator p_it2 = p_it; p_it2 < copias.end(); ++p_it2) {
+                    if ((*p_it2).z2 == z1Ini && (*p_it2).z1 > 0) {
+                        if ((*p_it2).centroMasaEnPoligono()) {
+                            if (!(*p_it2).ActualizarSoportes()) {
+                                return false;
+                            }
+                        }
+                        else {
+                            return false;
+                        }
+                    }
                 }
-                ini = i;
-                ai = arbol[i];
-                z1Actual = ai.z1;
+                z1Ini = (*p_it).z1;
+                --p_it;
             }
+        }
+        return true;
+    }
+    bool EsBloqueNuevo(vector<Bloque>& opciones, int const& desde, Bloque nuevo) {
+        for (vector<Bloque>::iterator b_it = opciones.begin() + desde; b_it < opciones.end(); ++b_it) {
+            if ((*b_it) == nuevo) return false;
         }
         return true;
     }
@@ -2483,18 +2525,22 @@ private:
                                 int ny = min(e.dy / (*b).y, (*bt).cantidad);
                                 while (ny > 0) {
                                     Bloque nuevo(*bt, *b, e, 1, ny, 1);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
-                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
-                                        while (nz > 1) {
-                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                break;
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
+                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
+                                            while (nz > 1) {
+                                                nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                    if (BloqueSoportadoPoligono(nuevo)) {
+                                                        opciones.push_back(nuevo);
+                                                        break;
+                                                    }
+                                                }
+                                                --nz;
                                             }
-                                            --nz;
+                                            break;
                                         }
-                                        break;
                                     }
                                     --ny;
                                 }
@@ -2504,18 +2550,22 @@ private:
                                 int nz = min(e.dz / (*b).z, (*bt).cantidad);
                                 while (nz > 0) {
                                     Bloque nuevo(*bt, *b, e, 1, 1, nz);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
-                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
-                                        while (ny > 1) {
-                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                break;
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
+                                            int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
+                                            while (ny > 1) {
+                                                nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                    if (BloqueSoportadoPoligono(nuevo)) {
+                                                        opciones.push_back(nuevo);
+                                                        break;
+                                                    }
+                                                }
+                                                --ny;
                                             }
-                                            --ny;
+                                            break;
                                         }
-                                        break;
                                     }
                                     --nz;
                                 }
@@ -2546,52 +2596,62 @@ private:
                                 int nx = min(e.dx / (*b).x, (*bt).cantidad);
                                 while (nx > 0) {
                                     Bloque nuevo(*bt, *b, e, nx, 1, 1);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
 
-                                        // y z
+                                            // y z
 
-                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nx);
-                                        while (ny > 1) {
-                                            nuevo = Bloque(*bt, *b, e, nx, ny, 1);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
-                                                while (nz > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            int ny = min(e.dy / (*b).y, (*bt).cantidad / nx);
+                                            while (ny > 1) {
+                                                nuevo = Bloque(*bt, *b, e, nx, ny, 1);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
+                                                        while (nz > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --nz;
+                                                        }
                                                         break;
                                                     }
-                                                    --nz;
                                                 }
-                                                break;
+                                                --ny;
                                             }
-                                            --ny;
-                                        }
 
-                                        // z y
+                                            // z y
 
-                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / nx);
-                                        while (nz > 1) {
-                                            nuevo = Bloque(*bt, *b, e, nx, 1, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
-                                                while (ny > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / nx);
+                                            while (nz > 1) {
+                                                nuevo = Bloque(*bt, *b, e, nx, 1, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
+                                                        while (ny > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --ny;
+                                                        }
                                                         break;
                                                     }
-                                                    --ny;
                                                 }
-                                                break;
+                                                --nz;
                                             }
-                                            --nz;
-                                        }
 
-                                        break;
+                                            break;
+                                        }
                                     }
                                     --nx;
                                 }
@@ -2601,52 +2661,62 @@ private:
                                 int ny = min(e.dy / (*b).y, (*bt).cantidad);
                                 while (ny > 0) {
                                     Bloque nuevo(*bt, *b, e, 1, ny, 1);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
 
-                                        // x z
+                                            // x z
 
-                                        nx = min(e.dx / (*b).x, (*bt).cantidad / ny);
-                                        while (nx > 1) {
-                                            nuevo = Bloque(*bt, *b, e, nx, ny, 1);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
-                                                while (nz > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            nx = min(e.dx / (*b).x, (*bt).cantidad / ny);
+                                            while (nx > 1) {
+                                                nuevo = Bloque(*bt, *b, e, nx, ny, 1);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
+                                                        while (nz > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --nz;
+                                                        }
                                                         break;
                                                     }
-                                                    --nz;
                                                 }
-                                                break;
+                                                --nx;
                                             }
-                                            --nx;
-                                        }
 
-                                        // z x
+                                            // z x
 
-                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
-                                        while (nz > 1) {
-                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                int nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
-                                                while (nx > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
+                                            while (nz > 1) {
+                                                nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        int nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
+                                                        while (nx > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --nx;
+                                                        }
                                                         break;
                                                     }
-                                                    --nx;
                                                 }
-                                                break;
+                                                --nz;
                                             }
-                                            --nz;
-                                        }
 
-                                        break;
+                                            break;
+                                        }
                                     }
                                     --ny;
                                 }
@@ -2656,52 +2726,62 @@ private:
                                 int nz = min(e.dz / (*b).z, (*bt).cantidad);
                                 while (nz > 0) {
                                     Bloque nuevo(*bt, *b, e, 1, 1, nz);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
 
-                                        // x y
+                                            // x y
 
-                                        nx = min(e.dx / (*b).x, (*bt).cantidad / nz);
-                                        while (nx > 1) {
-                                            nuevo = Bloque(*bt, *b, e, nx, 1, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                int ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
-                                                while (ny > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            nx = min(e.dx / (*b).x, (*bt).cantidad / nz);
+                                            while (nx > 1) {
+                                                nuevo = Bloque(*bt, *b, e, nx, 1, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
+                                                        while (ny > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --ny;
+                                                        }
                                                         break;
                                                     }
-                                                    --ny;
                                                 }
-                                                break;
+                                                --nx;
                                             }
-                                            --nx;
-                                        }
 
-                                        // y x
+                                            // y x
 
-                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
-                                        while (ny > 1) {
-                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
-                                                while (nx > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
+                                            while (ny > 1) {
+                                                nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
+                                                        while (nx > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --nx;
+                                                        }
                                                         break;
                                                     }
-                                                    --nx;
                                                 }
-                                                break;
+                                                --ny;
                                             }
-                                            --ny;
-                                        }
 
-                                        break;
+                                            break;
+                                        }
                                     }
                                     --nz;
                                 }
@@ -2824,7 +2904,7 @@ private:
                                 }
 
                                 // z y x
-                                
+
                                 ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
                                 if (ny > 1) {
                                     MeterBloqueNuevo(opciones, desde, Bloque(*bt, *b, e, 1, ny, nz));
@@ -2864,18 +2944,22 @@ private:
                             int ny = min(e.dy / (*b).y, (*bt).cantidad);
                             while (ny > 0) {
                                 Bloque nuevo(*bt, *b, e, 1, ny, 1);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
-                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
-                                    while (nz > 1) {
-                                        nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            break;
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
+                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
+                                        while (nz > 1) {
+                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                if (BloqueSoportadoPresion(nuevo)) {
+                                                    opciones.push_back(nuevo);
+                                                    break;
+                                                }
+                                            }
+                                            --nz;
                                         }
-                                        --nz;
+                                        break;
                                     }
-                                    break;
                                 }
                                 --ny;
                             }
@@ -2885,18 +2969,22 @@ private:
                             int nz = min(e.dz / (*b).z, (*bt).cantidad);
                             while (nz > 0) {
                                 Bloque nuevo(*bt, *b, e, 1, 1, nz);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
-                                    int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
-                                    while (ny > 1) {
-                                        nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            break;
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
+                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
+                                        while (ny > 1) {
+                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                if (BloqueSoportadoPresion(nuevo)) {
+                                                    opciones.push_back(nuevo);
+                                                    break;
+                                                }
+                                            }
+                                            --ny;
                                         }
-                                        --ny;
+                                        break;
                                     }
-                                    break;
                                 }
                                 --nz;
                             }
@@ -2927,52 +3015,62 @@ private:
                             int nx = min(e.dx / (*b).x, (*bt).cantidad);
                             while (nx > 0) {
                                 Bloque nuevo(*bt, *b, e, nx, 1, 1);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
 
-                                    // y z
+                                        // y z
 
-                                    int ny = min(e.dy / (*b).y, (*bt).cantidad / nx);
-                                    while (ny > 1) {
-                                        nuevo = Bloque(*bt, *b, e, nx, ny, 1);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
-                                            while (nz > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nx);
+                                        while (ny > 1) {
+                                            nuevo = Bloque(*bt, *b, e, nx, ny, 1);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
+                                                    while (nz > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --nz;
+                                                    }
                                                     break;
                                                 }
-                                                --nz;
                                             }
-                                            break;
+                                            --ny;
                                         }
-                                        --ny;
-                                    }
 
-                                    // z y
+                                        // z y
 
-                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / nx);
-                                    while (nz > 1) {
-                                        nuevo = Bloque(*bt, *b, e, nx, 1, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
-                                            while (ny > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / nx);
+                                        while (nz > 1) {
+                                            nuevo = Bloque(*bt, *b, e, nx, 1, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
+                                                    while (ny > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --ny;
+                                                    }
                                                     break;
                                                 }
-                                                --ny;
                                             }
-                                            break;
+                                            --nz;
                                         }
-                                        --nz;
-                                    }
 
-                                    break;
+                                        break;
+                                    }
                                 }
                                 --nx;
                             }
@@ -2982,52 +3080,62 @@ private:
                             int ny = min(e.dy / (*b).y, (*bt).cantidad);
                             while (ny > 0) {
                                 Bloque nuevo(*bt, *b, e, 1, ny, 1);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
 
-                                    // x z
+                                        // x z
 
-                                    nx = min(e.dx / (*b).x, (*bt).cantidad / ny);
-                                    while (nx > 1) {
-                                        nuevo = Bloque(*bt, *b, e, nx, ny, 1);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
-                                            while (nz > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        nx = min(e.dx / (*b).x, (*bt).cantidad / ny);
+                                        while (nx > 1) {
+                                            nuevo = Bloque(*bt, *b, e, nx, ny, 1);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
+                                                    while (nz > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --nz;
+                                                    }
                                                     break;
                                                 }
-                                                --nz;
                                             }
-                                            break;
+                                            --nx;
                                         }
-                                        --nx;
-                                    }
 
-                                    // z x
+                                        // z x
 
-                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
-                                    while (nz > 1) {
-                                        nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            int nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
-                                            while (nx > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
+                                        while (nz > 1) {
+                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    int nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
+                                                    while (nx > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --nx;
+                                                    }
                                                     break;
                                                 }
-                                                --nx;
                                             }
-                                            break;
+                                            --nz;
                                         }
-                                        --nz;
-                                    }
 
-                                    break;
+                                        break;
+                                    }
                                 }
                                 --ny;
                             }
@@ -3037,52 +3145,62 @@ private:
                             int nz = min(e.dz / (*b).z, (*bt).cantidad);
                             while (nz > 0) {
                                 Bloque nuevo(*bt, *b, e, 1, 1, nz);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
 
-                                    // x y
+                                        // x y
 
-                                    nx = min(e.dx / (*b).x, (*bt).cantidad / nz);
-                                    while (nx > 1) {
-                                        nuevo = Bloque(*bt, *b, e, nx, 1, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            int ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
-                                            while (ny > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        nx = min(e.dx / (*b).x, (*bt).cantidad / nz);
+                                        while (nx > 1) {
+                                            nuevo = Bloque(*bt, *b, e, nx, 1, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    int ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
+                                                    while (ny > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --ny;
+                                                    }
                                                     break;
                                                 }
-                                                --ny;
                                             }
-                                            break;
+                                            --nx;
                                         }
-                                        --nx;
-                                    }
 
-                                    // y x
+                                        // y x
 
-                                    int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
-                                    while (ny > 1) {
-                                        nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
-                                            while (nx > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
+                                        while (ny > 1) {
+                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
+                                                    while (nx > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --nx;
+                                                    }
                                                     break;
                                                 }
-                                                --nx;
                                             }
-                                            break;
+                                            --ny;
                                         }
-                                        --ny;
-                                    }
 
-                                    break;
+                                        break;
+                                    }
                                 }
                                 --nz;
                             }
@@ -3117,18 +3235,22 @@ private:
                                 int ny = min(e.dy / (*b).y, (*bt).cantidad);
                                 while (ny > 0) {
                                     Bloque nuevo(*bt, *b, e, 1, ny, 1);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
-                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
-                                        while (nz > 1) {
-                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                break;
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
+                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
+                                            while (nz > 1) {
+                                                nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                    if (BloqueSoportadoPoligono(nuevo)) {
+                                                        opciones.push_back(nuevo);
+                                                        break;
+                                                    }
+                                                }
+                                                --nz;
                                             }
-                                            --nz;
+                                            break;
                                         }
-                                        break;
                                     }
                                     --ny;
                                 }
@@ -3138,18 +3260,22 @@ private:
                                 int nz = min(e.dz / (*b).z, (*bt).cantidad);
                                 while (nz > 0) {
                                     Bloque nuevo(*bt, *b, e, 1, 1, nz);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
-                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
-                                        while (ny > 1) {
-                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                break;
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
+                                            int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
+                                            while (ny > 1) {
+                                                nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                    if (BloqueSoportadoPoligono(nuevo)) {
+                                                        opciones.push_back(nuevo);
+                                                        break;
+                                                    }
+                                                }
+                                                --ny;
                                             }
-                                            --ny;
+                                            break;
                                         }
-                                        break;
                                     }
                                     --nz;
                                 }
@@ -3183,52 +3309,62 @@ private:
                                 int nx = min(e.dx / (*b).x, (*bt).cantidad);
                                 while (nx > 0) {
                                     Bloque nuevo(*bt, *b, e, nx, 1, 1);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
 
-                                        // y z
+                                            // y z
 
-                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nx);
-                                        while (ny > 1) {
-                                            nuevo = Bloque(*bt, *b, e, nx, ny, 1);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
-                                                while (nz > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            int ny = min(e.dy / (*b).y, (*bt).cantidad / nx);
+                                            while (ny > 1) {
+                                                nuevo = Bloque(*bt, *b, e, nx, ny, 1);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
+                                                        while (nz > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --nz;
+                                                        }
                                                         break;
                                                     }
-                                                    --nz;
                                                 }
-                                                break;
+                                                --ny;
                                             }
-                                            --ny;
-                                        }
 
-                                        // z y
+                                            // z y
 
-                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / nx);
-                                        while (nz > 1) {
-                                            nuevo = Bloque(*bt, *b, e, nx, 1, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
-                                                while (ny > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / nx);
+                                            while (nz > 1) {
+                                                nuevo = Bloque(*bt, *b, e, nx, 1, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
+                                                        while (ny > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --ny;
+                                                        }
                                                         break;
                                                     }
-                                                    --ny;
                                                 }
-                                                break;
+                                                --nz;
                                             }
-                                            --nz;
-                                        }
 
-                                        break;
+                                            break;
+                                        }
                                     }
                                     --nx;
                                 }
@@ -3238,52 +3374,62 @@ private:
                                 int ny = min(e.dy / (*b).y, (*bt).cantidad);
                                 while (ny > 0) {
                                     Bloque nuevo(*bt, *b, e, 1, ny, 1);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
 
-                                        // x z
+                                            // x z
 
-                                        nx = min(e.dx / (*b).x, (*bt).cantidad / ny);
-                                        while (nx > 1) {
-                                            nuevo = Bloque(*bt, *b, e, nx, ny, 1);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
-                                                while (nz > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            nx = min(e.dx / (*b).x, (*bt).cantidad / ny);
+                                            while (nx > 1) {
+                                                nuevo = Bloque(*bt, *b, e, nx, ny, 1);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
+                                                        while (nz > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --nz;
+                                                        }
                                                         break;
                                                     }
-                                                    --nz;
                                                 }
-                                                break;
+                                                --nx;
                                             }
-                                            --nx;
-                                        }
 
-                                        // z x
+                                            // z x
 
-                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
-                                        while (nz > 1) {
-                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                int nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
-                                                while (nx > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
+                                            while (nz > 1) {
+                                                nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        int nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
+                                                        while (nx > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --nx;
+                                                        }
                                                         break;
                                                     }
-                                                    --nx;
                                                 }
-                                                break;
+                                                --nz;
                                             }
-                                            --nz;
-                                        }
 
-                                        break;
+                                            break;
+                                        }
                                     }
                                     --ny;
                                 }
@@ -3293,52 +3439,62 @@ private:
                                 int nz = min(e.dz / (*b).z, (*bt).cantidad);
                                 while (nz > 0) {
                                     Bloque nuevo(*bt, *b, e, 1, 1, nz);
-                                    if (BloqueSoportadoPoligono(nuevo)) {
-                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                    if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                        if (BloqueSoportadoPoligono(nuevo)) {
+                                            opciones.push_back(nuevo);
 
-                                        // x y
+                                            // x y
 
-                                        nx = min(e.dx / (*b).x, (*bt).cantidad / nz);
-                                        while (nx > 1) {
-                                            nuevo = Bloque(*bt, *b, e, nx, 1, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                int ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
-                                                while (ny > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            nx = min(e.dx / (*b).x, (*bt).cantidad / nz);
+                                            while (nx > 1) {
+                                                nuevo = Bloque(*bt, *b, e, nx, 1, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
+                                                        while (ny > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --ny;
+                                                        }
                                                         break;
                                                     }
-                                                    --ny;
                                                 }
-                                                break;
+                                                --nx;
                                             }
-                                            --nx;
-                                        }
 
-                                        // y x
+                                            // y x
 
-                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
-                                        while (ny > 1) {
-                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                            if (BloqueSoportadoPoligono(nuevo)) {
-                                                MeterBloqueNuevo(opciones, desde, nuevo);
-                                                nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
-                                                while (nx > 1) {
-                                                    nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                            int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
+                                            while (ny > 1) {
+                                                nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                     if (BloqueSoportadoPoligono(nuevo)) {
-                                                        MeterBloqueNuevo(opciones, desde, nuevo);
+                                                        opciones.push_back(nuevo);
+                                                        nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
+                                                        while (nx > 1) {
+                                                            nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                                if (BloqueSoportadoPoligono(nuevo)) {
+                                                                    opciones.push_back(nuevo);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            --nx;
+                                                        }
                                                         break;
                                                     }
-                                                    --nx;
                                                 }
-                                                break;
+                                                --ny;
                                             }
-                                            --ny;
-                                        }
 
-                                        break;
+                                            break;
+                                        }
                                     }
                                     --nz;
                                 }
@@ -3487,9 +3643,6 @@ private:
         }
     }
     void GenerarOpciones_Multidrop_Presion(vector<Bloque>& opciones, MaximalSpace const& e) {
-        
-        //TODO
-
         opciones.reserve(maxNBloques);
         if (dist01(generator) < 0.5) { // Bloques de 1 sola caja en x
             for (vector<BoxType>::iterator bt = boxest.begin(); bt < boxest.end(); ++bt) {
@@ -3513,18 +3666,22 @@ private:
                             int ny = min(e.dy / (*b).y, (*bt).cantidad);
                             while (ny > 0) {
                                 Bloque nuevo(*bt, *b, e, 1, ny, 1);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
-                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
-                                    while (nz > 1) {
-                                        nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            break;
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
+                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
+                                        while (nz > 1) {
+                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                if (BloqueSoportadoPresion(nuevo)) {
+                                                    opciones.push_back(nuevo);
+                                                    break;
+                                                }
+                                            }
+                                            --nz;
                                         }
-                                        --nz;
+                                        break;
                                     }
-                                    break;
                                 }
                                 --ny;
                             }
@@ -3534,18 +3691,22 @@ private:
                             int nz = min(e.dz / (*b).z, (*bt).cantidad);
                             while (nz > 0) {
                                 Bloque nuevo(*bt, *b, e, 1, 1, nz);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
-                                    int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
-                                    while (ny > 1) {
-                                        nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            break;
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
+                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
+                                        while (ny > 1) {
+                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                if (BloqueSoportadoPresion(nuevo)) {
+                                                    opciones.push_back(nuevo);
+                                                    break;
+                                                }
+                                            }
+                                            --ny;
                                         }
-                                        --ny;
+                                        break;
                                     }
-                                    break;
                                 }
                                 --nz;
                             }
@@ -3579,52 +3740,61 @@ private:
                             int nx = min(e.dx / (*b).x, (*bt).cantidad);
                             while (nx > 0) {
                                 Bloque nuevo(*bt, *b, e, nx, 1, 1);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
 
-                                    // y z
+                                        // y z
 
-                                    int ny = min(e.dy / (*b).y, (*bt).cantidad / nx);
-                                    while (ny > 1) {
-                                        nuevo = Bloque(*bt, *b, e, nx, ny, 1);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
-                                            while (nz > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nx);
+                                        while (ny > 1) {
+                                            nuevo = Bloque(*bt, *b, e, nx, ny, 1);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
+                                                    while (nz > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --nz;
+                                                    }
                                                     break;
                                                 }
-                                                --nz;
                                             }
-                                            break;
+                                            --ny;
                                         }
-                                        --ny;
-                                    }
 
-                                    // z y
+                                        // z y
 
-                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / nx);
-                                    while (nz > 1) {
-                                        nuevo = Bloque(*bt, *b, e, nx, 1, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
-                                            while (ny > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / nx);
+                                        while (nz > 1) {
+                                            nuevo = Bloque(*bt, *b, e, nx, 1, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
+                                                    while (ny > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --ny;
+                                                    }
                                                     break;
                                                 }
-                                                --ny;
                                             }
-                                            break;
+                                            --nz;
                                         }
-                                        --nz;
+                                        break;
                                     }
-
-                                    break;
                                 }
                                 --nx;
                             }
@@ -3634,52 +3804,62 @@ private:
                             int ny = min(e.dy / (*b).y, (*bt).cantidad);
                             while (ny > 0) {
                                 Bloque nuevo(*bt, *b, e, 1, ny, 1);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
 
-                                    // x z
+                                        // x z
 
-                                    nx = min(e.dx / (*b).x, (*bt).cantidad / ny);
-                                    while (nx > 1) {
-                                        nuevo = Bloque(*bt, *b, e, nx, ny, 1);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
-                                            while (nz > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        nx = min(e.dx / (*b).x, (*bt).cantidad / ny);
+                                        while (nx > 1) {
+                                            nuevo = Bloque(*bt, *b, e, nx, ny, 1);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / (nx * ny));
+                                                    while (nz > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --nz;
+                                                    }
                                                     break;
                                                 }
-                                                --nz;
                                             }
-                                            break;
+                                            --nx;
                                         }
-                                        --nx;
-                                    }
 
-                                    // z x
+                                        // z x
 
-                                    int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
-                                    while (nz > 1) {
-                                        nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            int nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
-                                            while (nx > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        int nz = min(e.dz / (*b).z, (*bt).cantidad / ny);
+                                        while (nz > 1) {
+                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    int nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
+                                                    while (nx > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --nx;
+                                                    }
                                                     break;
                                                 }
-                                                --nx;
                                             }
-                                            break;
+                                            --nz;
                                         }
-                                        --nz;
-                                    }
 
-                                    break;
+                                        break;
+                                    }
                                 }
                                 --ny;
                             }
@@ -3689,52 +3869,62 @@ private:
                             int nz = min(e.dz / (*b).z, (*bt).cantidad);
                             while (nz > 0) {
                                 Bloque nuevo(*bt, *b, e, 1, 1, nz);
-                                if (BloqueSoportadoPresion(nuevo)) {
-                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                    if (BloqueSoportadoPresion(nuevo)) {
+                                        opciones.push_back(nuevo);
 
-                                    // x y
+                                        // x y
 
-                                    nx = min(e.dx / (*b).x, (*bt).cantidad / nz);
-                                    while (nx > 1) {
-                                        nuevo = Bloque(*bt, *b, e, nx, 1, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            int ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
-                                            while (ny > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        nx = min(e.dx / (*b).x, (*bt).cantidad / nz);
+                                        while (nx > 1) {
+                                            nuevo = Bloque(*bt, *b, e, nx, 1, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    int ny = min(e.dy / (*b).y, (*bt).cantidad / (nx * nz));
+                                                    while (ny > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --ny;
+                                                    }
                                                     break;
                                                 }
-                                                --ny;
                                             }
-                                            break;
+                                            --nx;
                                         }
-                                        --nx;
-                                    }
 
-                                    // y x
+                                        // y x
 
-                                    int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
-                                    while (ny > 1) {
-                                        nuevo = Bloque(*bt, *b, e, 1, ny, nz);
-                                        if (BloqueSoportadoPresion(nuevo)) {
-                                            MeterBloqueNuevo(opciones, desde, nuevo);
-                                            nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
-                                            while (nx > 1) {
-                                                nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                        int ny = min(e.dy / (*b).y, (*bt).cantidad / nz);
+                                        while (ny > 1) {
+                                            nuevo = Bloque(*bt, *b, e, 1, ny, nz);
+                                            if (EsBloqueNuevo(opciones, desde, nuevo)) {
                                                 if (BloqueSoportadoPresion(nuevo)) {
-                                                    MeterBloqueNuevo(opciones, desde, nuevo);
+                                                    opciones.push_back(nuevo);
+                                                    nx = min(e.dx / (*b).x, (*bt).cantidad / (ny * nz));
+                                                    while (nx > 1) {
+                                                        nuevo = Bloque(*bt, *b, e, nx, ny, nz);
+                                                        if (EsBloqueNuevo(opciones, desde, nuevo)) {
+                                                            if (BloqueSoportadoPresion(nuevo)) {
+                                                                opciones.push_back(nuevo);
+                                                                break;
+                                                            }
+                                                        }
+                                                        --nx;
+                                                    }
                                                     break;
                                                 }
-                                                --nx;
                                             }
-                                            break;
+                                            --ny;
                                         }
-                                        --ny;
-                                    }
 
-                                    break;
+                                        break;
+                                    }
                                 }
                                 --nz;
                             }
@@ -3773,59 +3963,74 @@ private:
     }
 
     // Empacar
-
+    
     void ActualizarArbolPresion(int const& nUltimasPiezas) {
-
-        // Determinar soportes de las piezas
-
-        int desde = (int)empacados.size() - nUltimasPiezas;
-        int z10 = empacados[desde].z1;
-        for (vector<PackedBox>::iterator p_it = empacados.begin() + desde; p_it < empacados.end(); ++p_it) {
-            if ((*p_it).z1 > z10) {
-                vector<int> misIndices;
-                for (vector<PackedBox>::iterator p_it2 = empacados.begin() + desde; p_it2 < p_it; ++p_it2) {
-                    if ((*p_it2).z2 == (*p_it).z1) misIndices.push_back((*p_it2).ind);
-                }
-                (*p_it).DeterminarSoportes(misIndices, empacados);
-            }
-        }
 
         // Determinar arbol de actualización
 
         vector<vector<PackedBox>::iterator> arbol;
+        int menorZ1 = ContenedorDimz;
         for (vector<PackedBox>::iterator p_it = empacados.begin() + (int)empacados.size() - nUltimasPiezas; p_it < empacados.end(); ++p_it) {
             arbol.push_back(p_it);
+            if ((*p_it).z1 < menorZ1) {
+                menorZ1 = (*p_it).z1;
+            }
         }
-        sort(arbol.begin(), arbol.end(), [](vector<PackedBox>::iterator const& p1, vector<PackedBox>::iterator const& p2)->bool {return (*p1).z1 > (*p2).z1; });
-        int z1Actual = (*arbol.front()).z1;
-        int i = 0;
-        PackedBox ai = *arbol.front();
-        int ini = 0;
-        while (ai.z1 > 0) {
-            for (vector<Soporte>::iterator s_it = ai.soportes.begin(); s_it < ai.soportes.end(); ++s_it) {
-                bool yaEsta = false;
-                for (vector<vector<PackedBox>::iterator>::iterator p_it = arbol.begin() + i; p_it < arbol.end(); ++p_it) {
-                    if ((**p_it).ind == (*s_it).indPB) {
-                        yaEsta = true;
-                        break;
+        int hasta = arbol.size();
+        for (int i = 0; i < hasta; ++i) {
+            vector<PackedBox>::iterator p_it = arbol[i];
+            if ((*p_it).z1 == menorZ1) {
+                int siguiente = arbol.size();
+                while ((*p_it).z1 > 0) {
+                    for (vector<Soporte>::iterator s_it = (*p_it).soportes.begin(); s_it < (*p_it).soportes.end(); ++s_it) {
+                        bool nuevaPieza = true;
+                        for (vector<vector<PackedBox>::iterator>::iterator p_itit = arbol.begin() + hasta; p_itit < arbol.end(); ++p_itit) {
+                            if ((*s_it).indPB == (**p_itit).ind) {
+                                nuevaPieza = false;
+                                break;
+                            }
+                        }
+                        if (nuevaPieza) {
+                            arbol.push_back(empacados.begin() + (*s_it).indPB);
+                        }
                     }
-                }
-                if (!yaEsta) {
-                    arbol.push_back(empacados.begin() + (*s_it).indPB);
-                    (*arbol.back()).ActualizarCentroDeMasa(*s_it);
+                    if (siguiente < arbol.size()) {
+                        for (; siguiente < arbol.size(); ++siguiente) {
+                            p_it = arbol[siguiente];
+                            if ((*p_it).z1 > 0) break;
+                        }
+                        ++siguiente;
+                    }
+                    else break;
                 }
             }
-            ++i;
-            ai = *arbol[i];
-            if (ai.z1 != z1Actual) {
-                sort(arbol.begin() + ini, arbol.end(), [](vector<PackedBox>::iterator const& p1, vector<PackedBox>::iterator const& p2)->bool {return (*p1).z1 > (*p2).z1; });
-                for (vector<vector<PackedBox>::iterator>::iterator p_it = arbol.begin() + ini; p_it < arbol.begin() + i; ++p_it) {
-                    (**p_it).centroMasaEnPoligono();
-                    (**p_it).ActualizarSoportes();
+        }
+        sort(arbol.begin(), arbol.end(), [](vector<PackedBox>::iterator const& p1, vector<PackedBox>::iterator const& p2)->bool {return (*p1).z1 > (*p2).z1; });
+
+        // Actualizar soporte
+
+        for (vector<vector<PackedBox>::iterator>::iterator p_itit = arbol.begin(); p_itit < arbol.end(); ++p_itit) {
+            if ((**p_itit).z1 > 0) {
+                for (vector<Soporte>::iterator s_it = (**p_itit).soportes.begin(); s_it < (**p_itit).soportes.end(); ++s_it) {
+
+                    // Actualizar soporte
+
+                    vector<vector<PackedBox>::iterator>::iterator p_itit2 = p_itit + 1;
+                    for (; p_itit2 < arbol.end(); ++p_itit2) {
+                        if ((**p_itit2).ind == (*s_it).indPB) {
+                            break;
+                        }
+                    }
+                    (**p_itit2).ActualizarCentroDeMasa(*s_it);
                 }
-                ini = i;
-                ai = *arbol[i];
-                z1Actual = ai.z1;
+            }
+        }
+
+        // Actualizar distribución de pesos
+
+        for (vector<vector<PackedBox>::iterator>::iterator p_itit = arbol.begin(); p_itit < arbol.end(); ++p_itit) {
+            if ((**p_itit).z1 > 0) {
+                (**p_itit).ActualizarSoportes();
             }
         }
     }
@@ -3909,10 +4114,100 @@ private:
             ActualizarIndicesCajasDeEspacios();
         }
     }
-    void Empacar_Presion(vector<Bloque>::iterator& b, vector<MaximalSpace>::iterator& e) {
-        for (vector<BloqueAux>::iterator b_it = (*b).cajas.begin(); b_it < (*b).cajas.end(); ++b_it) {
-            empacados.push_back(PackedBox(empacados.size(), *b, *b_it, empacados));
+    void GenerarPiezasEmpacadas(Bloque& b) {
+        
+        // Generar las piezas empacadas
+
+        int desde = empacados.size();
+        for (vector<BloqueAux>::iterator b_it = b.cajas.begin(); b_it < b.cajas.end(); ++b_it) {
+            if ((*b_it).z1 == b.z1) {
+                if (b.z1 == 0) {
+                    empacados.push_back(PackedBox(empacados.size(), b, *b_it));
+                }
+                else {
+                    double centroMasax = (double)((*b_it).x1 + (double)b.b.x / 2.0);
+                    double centroMasay = (double)((*b_it).y1 + (double)b.b.y / 2.0);
+                    vector<Point> intersecciones;
+                    intersecciones.reserve(4 * b.indPB_EM.size());
+                    vector<Soporte> misSoportes; misSoportes.reserve(b.indPB_EM.size());
+                    for (vector<int>::iterator idPB = b.indPB_EM.begin(); idPB < b.indPB_EM.end(); ++idPB) {
+                        PackedBox& p = empacados[*idPB];
+                        if (!((*b_it).x1 >= p.x2 || p.x1 >= (*b_it).x1 + b.b.x)) {
+                            if (!((*b_it).y1 >= p.y2 || p.y1 >= (*b_it).y1 + b.b.y)) {
+
+                                // Se encuentran los puntos de intersección
+
+                                vector<int> misx({ (*b_it).x1, (*b_it).x1 + b.b.x, p.x1, p.x2 });
+                                sort(misx.begin(), misx.end());
+                                vector<int> misy({ (*b_it).y1, (*b_it).y1 + b.b.y, p.y1, p.y2 });
+                                sort(misy.begin(), misy.end());
+                                intersecciones.push_back(Point(misx[1], misy[1]));
+                                intersecciones.push_back(Point(misx[2], misy[1]));
+                                intersecciones.push_back(Point(misx[1], misy[2]));
+                                intersecciones.push_back(Point(misx[2], misy[2]));
+
+                                // Se crea el soporte
+
+                                misSoportes.push_back(Soporte(*idPB, (misx[2] - misx[1]) * (misy[2] - misy[1]), (double)(misx[2] + misx[1]) / 2.0f, (double)(misy[2] + misy[1]) / 2.0f, p.presion));
+                            }
+                        }
+                    }
+
+                    // Determinar polígono
+
+                    if (intersecciones.size() > 0) {
+                        Poligono poligono(intersecciones);
+                        empacados.push_back(PackedBox(empacados.size(), b, *b_it, centroMasax, centroMasay, poligono, misSoportes));
+                        if (empacados.back().z2 == b.z2 && empacados.back().z1 > 0) {
+                            empacados.back().ActualizarSoportes();
+                        }
+                    }
+                    else cout << "Error" << endl;
+                }
+            }
+            else {
+                double centroMasax = (double)((*b_it).x1 + (double)b.b.x / 2.0);
+                double centroMasay = (double)((*b_it).y1 + (double)b.b.y / 2.0);
+                vector<Point> intersecciones;
+                intersecciones.reserve(4 * b.indPB_EM.size());
+                vector<Soporte> misSoportes; misSoportes.reserve(b.indPB_EM.size());
+                for (vector<PackedBox>::iterator p_it = empacados.begin() + desde; p_it < empacados.end(); ++p_it) {
+                    if (!((*b_it).x1 >= (*p_it).x2 || (*p_it).x1 >= (*b_it).x1 + b.b.x)) {
+                        if (!((*b_it).y1 >= (*p_it).y2 || (*p_it).y1 >= (*b_it).y1 + b.b.y)) {
+
+                            // Se encuentran los puntos de intersección
+
+                            vector<int> misx({ (*b_it).x1, (*b_it).x1 + b.b.x, (*p_it).x1, (*p_it).x2 });
+                            sort(misx.begin(), misx.end());
+                            vector<int> misy({ (*b_it).y1, (*b_it).y1 + b.b.y, (*p_it).y1, (*p_it).y2 });
+                            sort(misy.begin(), misy.end());
+                            intersecciones.push_back(Point(misx[1], misy[1]));
+                            intersecciones.push_back(Point(misx[2], misy[1]));
+                            intersecciones.push_back(Point(misx[1], misy[2]));
+                            intersecciones.push_back(Point(misx[2], misy[2]));
+
+                            // Se crea el soporte
+
+                            misSoportes.push_back(Soporte((*p_it).ind, (misx[2] - misx[1]) * (misy[2] - misy[1]), (double)(misx[2] + misx[1]) / 2.0f, (double)(misy[2] + misy[1]) / 2.0f, (*p_it).presion));
+                        }
+                    }
+                }
+
+                // Determinar polígono
+
+                if (intersecciones.size() > 0) {
+                    Poligono poligono(intersecciones);
+                    empacados.push_back(PackedBox(empacados.size(), b, *b_it, centroMasax, centroMasay, poligono, misSoportes));
+                    if (empacados.back().z2 == b.z2 && empacados.back().z1 > 0) {
+                        empacados.back().ActualizarSoportes();
+                    }
+                }
+                else cout << "Error" << endl;
+            }
         }
+    }
+    void Empacar_Presion(vector<Bloque>::iterator& b, vector<MaximalSpace>::iterator& e) {
+        GenerarPiezasEmpacadas(*b);
         ActualizarArbolPresion((*b).btq);
         utilizacion += (*b).bt.volumen * (*b).btq;
         boxest[(*b).bt.id].cantidad -= (*b).btq;
@@ -3932,9 +4227,7 @@ private:
         ActualizarIndicesCajasDeEspacios();
     }
     void Empacar_Multidrop_Presion(vector<Bloque>::iterator& b, vector<MaximalSpace>::iterator& e) {
-        for (vector<BloqueAux>::iterator b_it = (*b).cajas.begin(); b_it < (*b).cajas.end(); ++b_it) {
-            empacados.push_back(PackedBox(empacados.size(), *b, *b_it, empacados));
-        }
+        GenerarPiezasEmpacadas(*b);
         ActualizarArbolPresion((*b).cajas.size());
         utilizacion += (*b).bt.volumen * (*b).btq;
         boxest[(*b).bt.id].cantidad -= (*b).btq;
@@ -4196,7 +4489,7 @@ public:
     void Constructivo_Multidrop_Presion() {
         //++holi;
         while ((int)espacios.size() > 0 && hayCajasPorEmpacar) { // Falta poner restricción si hay algún tipo con caja
-
+            
             // Se selecciona el espacio maximal
 
             vector<MaximalSpace>::iterator mejorEspacio = espacios.begin();
@@ -4904,7 +5197,7 @@ void UpdateTimeParal(double& paralDur)
     auto miDuracion = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - tIni);
     paralDur = (double)miDuracion.count() / 1000.0;
 }
-void WriteData(string const& ins, int const& repeticion, int const& totalIteraciones, int& th, int& dur)
+void WriteData(string const& ins, int const& repeticion, int const& totalIteraciones, int th, int dur)
 {
     // Tiempo
 
@@ -4929,7 +5222,7 @@ void WriteData(string const& ins, int const& repeticion, int const& totalIteraci
     filePath += "_d" + to_string(dur);
     filePath += ".txt";
     ofstream writer(filePath);
-    writer << "Utilizacion " << to_string(incumbente.utilizacion) << " VolCajasEmpacado " << to_string(incumbente.volEmpacado) << " Duracion[s] " << to_string(duracion) << " Iteraciones " << totalIteraciones << endl;
+    writer << "Utilizacion " << to_string(incumbente.utilizacion) << " VolCajasEmpacado " << to_string(incumbente.volEmpacado) << " Duracion[s] " << to_string(duracion) << " Iteraciones " << to_string(totalIteraciones) << endl;
     int id = 0;
     for (vector<PackedBox>::iterator p = incumbente.empacados.begin(); p < incumbente.empacados.end(); ++p, ++id) {
         writer << to_string(id) << " " << to_string((*p).id) << " " << to_string((*p).cliente) << " " + to_string((*p).x1) << " " << to_string((*p).y1) << " " << to_string((*p).z1) << " " << to_string((*p).x2) << " " << to_string((*p).y2) << " " << to_string((*p).z2) << endl;
@@ -4974,14 +5267,491 @@ void ReiniciarVariables() {
     alphas.clear();
     alphas = vector<Alpha>({ Alpha(0.1), Alpha(0.2), Alpha(0.3), Alpha(0.4), Alpha(0.5), Alpha(0.6), Alpha(0.7), Alpha(0.8), Alpha(0.9), Alpha(1.0) });
     tIni = chrono::high_resolution_clock::now();
-    maxIter = 500;
     duracion = 0;
     generator.seed(chrono::system_clock::now().time_since_epoch().count());
+    //generator.seed(123);
 }
 
 // Main
+int main(int argc, char** argv) {
 
-int main(int argc, char** argv) { // Se elimina la condición de que el algoritmo para cuando todas las cajas se hayan empacado
+    // Parámetros
+
+    string ins = "";
+    int maxTime = 60;
+    int nThreads = 1;
+    for (int i = 1; i < argc - 1; i += 2) {
+        if (argc - 1 >= i + 1) {
+            if (string(argv[i]) == "-ins") ins = argv[i + 1];
+            else if (string(argv[i]) == "-nThreads") nThreads = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-maxTime") maxTime = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-estabilidad") r_estabilidad = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-juntar") r_juntarEspacios = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-presion") {
+                if (string(argv[i + 1]) == "1") r_maxPresionItems = true;
+                else r_maxPresionItems = false;
+            }
+            else if (string(argv[i]) == "-multidrop") r_multidrop = atoi(argv[i + 1]);
+            else {
+                cout << "Mal en par�metros" << endl;
+                return 0;
+            }
+        }
+    }
+    omp_set_dynamic(0);
+    omp_set_num_threads(nThreads);
+
+    // Ciclo de repeticiones
+
+    ReiniciarVariables();
+
+    // Leer datos
+
+    ReadData2(ins);
+    incumbente = Container(C0, false);
+    errorArea = 0.5 / (double)(ContenedorDimx * ContenedorDimy);
+    double totalPesoAcum = 0;
+    int j = 1;
+    for (vector<double>::iterator p_it = pesos_acum.begin(); p_it < pesos_acum.end(); ++p_it, ++j) {
+        (*p_it) = 1.0 / (double)j;
+        totalPesoAcum += *p_it;
+    }
+    for (vector<double>::iterator p_it = pesos_acum.begin(); p_it < pesos_acum.end(); ++p_it) {
+        (*p_it) /= totalPesoAcum;
+    }
+    for (vector<double>::iterator p_it = pesos_acum.begin() + 1; p_it < pesos_acum.end(); ++p_it) {
+        (*p_it) += *(p_it - 1);
+    }
+
+    // Volumen total
+
+    totalVolumen = 0;
+    for (vector<BoxType>::iterator b_it = C0.boxest.begin(); b_it < C0.boxest.end(); ++b_it) {
+        totalVolumen += (*b_it).cantidad0 * (*b_it).volumenReal;
+    }
+    double MaxUtilizacionPosible = totalVolumen / ContenedorVol * 100.0;
+    totalVolumen /= 100.0;
+    if (r_multidrop > 0 && totalVolumen > ContenedorVol) { // Se eliminan los clientes que no alcanzan a empacarse por el volumen de los anteriores
+        int miVol = 0;
+        vector<BoxType>::iterator b_it = C0.boxest.begin();
+        int clienteHasta = 0;
+        for (; b_it < C0.boxest.end(); ++b_it) {
+            miVol += (*b_it).cantidad0 * (*b_it).volumenReal;
+            if (miVol >= ContenedorVol) {
+                clienteHasta = (*b_it).cliente;
+                break;
+            }
+        }
+        for (; b_it < C0.boxest.end(); ++b_it) {
+            if ((*b_it).cliente > clienteHasta) {
+                C0.boxest.resize(distance(C0.boxest.begin(), b_it - 1));
+                break;
+            }
+        }
+    }
+
+    // Variables de paralelización
+
+    vector<int> paralNIter(nThreads, 0);
+    vector<int> paralThreshold_iter(nThreads, 0);
+    list<int> paralThreshold_val({ 0 });
+    vector<int> paralHolguraMultiplicador(nThreads, 1);
+    vector<vector<Alpha>> paralAlphas(nThreads, vector<Alpha>({ Alpha(0.1), Alpha(0.2), Alpha(0.3), Alpha(0.4), Alpha(0.5), Alpha(0.6), Alpha(0.7), Alpha(0.8), Alpha(0.9), Alpha(1.0) }));
+    vector<Container> paralIncumbente(nThreads, C0);
+    vector<double> paralDuraciones(nThreads, 0);
+
+    // Adquisición de datos iniciales
+
+    if (r_multidrop > 0) {
+        if (r_maxPresionItems) {
+#pragma omp parallel for
+            for (int i = 0; i < alphas.size(); ++i) {
+                int idThread = omp_get_thread_num();
+                if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                    ++paralNIter[idThread];
+                    Alpha& a = paralAlphas[idThread][i];
+                    Container C(C0, true);
+                    C.alpha = a.val;
+                    C.Constructivo_Multidrop_Presion();
+                    ActualizarAlpha(a, C.utilizacion);
+                    int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
+                    if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                        paralIncumbente[idThread] = Container(C, false);
+                        paralThreshold_val.push_back(C.utilizacion);
+                    }
+                    if (C.utilizacion > BestUtil) {
+
+                        // Búsqueda local
+
+                        C.RemoverPiezas_Multidrop_Presion();
+                        C.ConstructivoDeterministico_Multidrop_Presion();
+                        ActualizarAlpha(a, C.utilizacion);
+                        if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                            paralIncumbente[idThread] = Container(C, false);
+                            paralThreshold_val.push_back(C.utilizacion);
+                        }
+                        paralThreshold_iter[idThread] = 0;
+                    }
+                    else {
+                        ++paralThreshold_iter[idThread];
+                        if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                            paralThreshold_iter[idThread] = 0;
+                            paralHolguraMultiplicador[idThread] *= 0.8;
+                        }
+                    }
+
+                    // Parar por tiempo
+
+                    UpdateTimeParal(paralDuraciones[idThread]);
+                }
+            }
+        }
+        else {
+#pragma omp parallel for
+            for (int i = 0; i < alphas.size(); ++i) {
+                int idThread = omp_get_thread_num();
+                if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                    ++paralNIter[idThread];
+                    Alpha& a = paralAlphas[idThread][i];
+                    Container C(C0, true);
+                    C.alpha = a.val;
+                    C.Constructivo_Multidrop();
+                    ActualizarAlpha(a, C.utilizacion);
+                    int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
+                    if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                        paralIncumbente[idThread] = Container(C, false);
+                        paralThreshold_val.push_back(C.utilizacion);
+                    }
+                    if (C.utilizacion > BestUtil) {
+
+                        // Búsqueda local
+
+                        C.RemoverPiezas_Multidrop();
+                        C.ConstructivoDeterministico_Multidrop();
+                        ActualizarAlpha(a, C.utilizacion);
+                        if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                            paralIncumbente[idThread] = Container(C, false);
+                            paralThreshold_val.push_back(C.utilizacion);
+                        }
+                        paralThreshold_iter[idThread] = 0;
+                    }
+                    else {
+                        ++paralThreshold_iter[idThread];
+                        if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                            paralThreshold_iter[idThread] = 0;
+                            paralHolguraMultiplicador[idThread] *= 0.8;
+                        }
+                    }
+
+                    // Parar por tiempo
+
+                    if (idThread == 0) {
+                        UpdateTimeParal(paralDuraciones[idThread]);
+                    }
+                }
+            }
+        }
+    }
+    else {
+        if (r_maxPresionItems) {
+#pragma omp parallel for
+            for (int i = 0; i < alphas.size(); ++i) {
+                int idThread = omp_get_thread_num();
+                if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                    ++paralNIter[idThread];
+                    Alpha& a = paralAlphas[idThread][i];
+                    Container C(C0, true);
+                    C.alpha = a.val;
+                    C.Constructivo_Presion();
+                    ActualizarAlpha(a, C.utilizacion);
+                    int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
+                    if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                        paralIncumbente[idThread] = Container(C, false);
+                        paralThreshold_val.push_back(C.utilizacion);
+                    }
+                    if (C.utilizacion > BestUtil) {
+
+                        // Búsqueda local
+
+                        C.RemoverPiezas_Presion();
+                        C.ConstructivoDeterministico_Presion();
+                        ActualizarAlpha(a, C.utilizacion);
+                        if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                            paralIncumbente[idThread] = Container(C, false);
+                            paralThreshold_val.push_back(C.utilizacion);
+                        }
+                        paralThreshold_iter[idThread] = 0;
+                    }
+                    else {
+                        ++paralThreshold_iter[idThread];
+                        if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                            paralThreshold_iter[idThread] = 0;
+                            paralHolguraMultiplicador[idThread] *= 0.8;
+                        }
+                    }
+
+                    // Parar por tiempo
+
+                    if (idThread == 0) {
+                        UpdateTimeParal(paralDuraciones[idThread]);
+                    }
+                }
+            }
+        }
+        else {
+#pragma omp parallel for
+            for (int i = 0; i < alphas.size(); ++i) {
+                int idThread = omp_get_thread_num();
+                if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                    ++paralNIter[idThread];
+                    Alpha& a = paralAlphas[idThread][i];
+                    Container C(C0, true);
+                    C.alpha = a.val;
+                    C.Constructivo();
+                    ActualizarAlpha(a, C.utilizacion);
+                    int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
+                    if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                        paralIncumbente[idThread] = Container(C, false);
+                        paralThreshold_val.push_back(C.utilizacion);
+                    }
+                    if (C.utilizacion > BestUtil) {
+
+                        // Búsqueda local
+
+                        C.RemoverPiezas();
+                        C.ConstructivoDeterministico();
+                        ActualizarAlpha(a, C.utilizacion);
+                        if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                            paralIncumbente[idThread] = Container(C, false);
+                            paralThreshold_val.push_back(C.utilizacion);
+                        }
+                        paralThreshold_iter[idThread] = 0;
+                    }
+                    else {
+                        ++paralThreshold_iter[idThread];
+                        if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                            paralThreshold_iter[idThread] = 0;
+                            paralHolguraMultiplicador[idThread] *= 0.8;
+                        }
+                    }
+
+                    // Parar por tiempo
+
+                    if (idThread == 0) {
+                        UpdateTimeParal(paralDuraciones[idThread]);
+                    }
+                }
+            }
+        }
+    }
+
+    // Resto de la metaheurística
+
+    UpdateTime();
+    incumbente = *max_element(paralIncumbente.begin(), paralIncumbente.end());
+    if (duracion >= maxTime || !incumbente.hayCajasPorEmpacar) {
+        WriteData(ins, 0, (int)accumulate(paralNIter.begin(), paralNIter.end(), 0), nThreads, (int)maxTime);
+        return 1;
+    }
+    int maxIter = 100000;
+    if (r_multidrop > 0) {
+        if (r_maxPresionItems) {
+            while (duracion < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+#pragma omp parallel for
+                for (int i = 0; i < maxIter; ++i) {
+                    int idThread = omp_get_thread_num();
+                    if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                        ++paralNIter[idThread];
+                        vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
+                        Container C(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Multidrop_Presion();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
+                        if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                            paralIncumbente[idThread] = Container(C, false);
+                            paralThreshold_val.push_back(C.utilizacion);
+                        }
+                        if (C.utilizacion > BestUtil) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop_Presion();
+                            C.ConstructivoDeterministico_Multidrop_Presion();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                                paralIncumbente[idThread] = Container(C, false);
+                                paralThreshold_val.push_back(C.utilizacion);
+                            }
+                            paralThreshold_iter[idThread] = 0;
+                        }
+                        else {
+                            ++paralThreshold_iter[idThread];
+                            if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                paralThreshold_iter[idThread] = 0;
+                                paralHolguraMultiplicador[idThread] *= 0.8;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTimeParal(paralDuraciones[idThread]);
+                    }
+                }
+                UpdateTime();
+            }
+        }
+        else {
+            while (duracion < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+#pragma omp parallel for
+                for (int i = 0; i < maxIter; ++i) {
+                    int idThread = omp_get_thread_num();
+                    if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                        ++paralNIter[idThread];
+                        vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
+                        Container C(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Multidrop();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
+                        if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                            paralIncumbente[idThread] = Container(C, false);
+                            paralThreshold_val.push_back(C.utilizacion);
+                        }
+                        if (C.utilizacion > BestUtil) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop();
+                            C.ConstructivoDeterministico_Multidrop();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                                paralIncumbente[idThread] = Container(C, false);
+                                paralThreshold_val.push_back(C.utilizacion);
+                            }
+                            paralThreshold_iter[idThread] = 0;
+                        }
+                        else {
+                            ++paralThreshold_iter[idThread];
+                            if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                paralThreshold_iter[idThread] = 0;
+                                paralHolguraMultiplicador[idThread] *= 0.8;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTimeParal(paralDuraciones[idThread]);
+                    }
+                }
+                UpdateTime();
+            }
+        }
+    }
+    else {
+        if (r_maxPresionItems) {
+            while (duracion < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+#pragma omp parallel for
+                for (int i = 0; i < maxIter; ++i) {
+                    int idThread = omp_get_thread_num();
+                    if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                        ++paralNIter[idThread];
+                        vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
+                        Container C(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Presion();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
+                        if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                            paralIncumbente[idThread] = Container(C, false);
+                            paralThreshold_val.push_back(C.utilizacion);
+                        }
+                        if (C.utilizacion > BestUtil) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Presion();
+                            C.ConstructivoDeterministico_Presion();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                                paralIncumbente[idThread] = Container(C, false);
+                                paralThreshold_val.push_back(C.utilizacion);
+                            }
+                            paralThreshold_iter[idThread] = 0;
+                        }
+                        else {
+                            ++paralThreshold_iter[idThread];
+                            if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                paralThreshold_iter[idThread] = 0;
+                                paralHolguraMultiplicador[idThread] *= 0.8;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTimeParal(paralDuraciones[idThread]);
+                    }
+                }
+                UpdateTime();
+            }
+        }
+        else {
+            while (duracion < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+#pragma omp parallel for
+                for (int i = 0; i < maxIter; ++i) {
+                    int idThread = omp_get_thread_num();
+                    if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                        ++paralNIter[idThread];
+                        vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
+                        Container C(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
+                        if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                            paralIncumbente[idThread] = Container(C, false);
+                            paralThreshold_val.push_back(C.utilizacion);
+                        }
+                        if (C.utilizacion > BestUtil) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas();
+                            C.ConstructivoDeterministico();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                                paralIncumbente[idThread] = Container(C, false);
+                                paralThreshold_val.push_back(C.utilizacion);
+                            }
+                            paralThreshold_iter[idThread] = 0;
+                        }
+                        else {
+                            ++paralThreshold_iter[idThread];
+                            if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                paralThreshold_iter[idThread] = 0;
+                                paralHolguraMultiplicador[idThread] *= 0.8;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTimeParal(paralDuraciones[idThread]);
+                    }
+                }
+                UpdateTime();
+            }
+        }
+    }
+
+    // Escribir resultados
+
+    incumbente = *max_element(paralIncumbente.begin(), paralIncumbente.end());
+    WriteData(ins, 0, (int)accumulate(paralNIter.begin(), paralNIter.end(), 0), nThreads, (int)maxTime);
+    return 0;
+}
+// Multi Thread
+/*
+int main(int argc, char** argv) { 
 
     // Parámetros
 
@@ -5056,16 +5826,13 @@ int main(int argc, char** argv) { // Se elimina la condición de que el algoritm
                 (*p_it) += *(p_it - 1);
             }
 
-            // Número de iteraciones
+            // Volumen total
 
-            int nCajas = 0;
-            nCajas = accumulate(C0.boxest.begin(), C0.boxest.end(), nCajas, [](int const& resp, BoxType const& bt)->int {return resp + bt.cantidad0; });
-            maxIter *= nCajas * nThreads;
-            maxIter -= alphas.size();
             totalVolumen = 0;
             for (vector<BoxType>::iterator b_it = C0.boxest.begin(); b_it < C0.boxest.end(); ++b_it) {
                 totalVolumen += (*b_it).cantidad0 * (*b_it).volumenReal;
             }
+            double MaxUtilizacionPosible = totalVolumen / ContenedorVol * 100.0;
             totalVolumen /= 100.0;
             if (r_multidrop > 0 && totalVolumen > ContenedorVol) { // Se eliminan los clientes que no alcanzan a empacarse por el volumen de los anteriores
                 int miVol = 0;
@@ -5090,7 +5857,7 @@ int main(int argc, char** argv) { // Se elimina la condición de que el algoritm
 
             vector<int> paralNIter(nThreads, 0);
             vector<int> paralThreshold_iter(nThreads, 0);
-            list<int> paralThreshold_val({0});
+            list<int> paralThreshold_val({ 0 });
             vector<int> paralHolguraMultiplicador(nThreads, 1);
             vector<vector<Alpha>> paralAlphas(nThreads, vector<Alpha>({ Alpha(0.1), Alpha(0.2), Alpha(0.3), Alpha(0.4), Alpha(0.5), Alpha(0.6), Alpha(0.7), Alpha(0.8), Alpha(0.9), Alpha(1.0) }));
             vector<Container> paralIncumbente(nThreads, C0);
@@ -5103,7 +5870,7 @@ int main(int argc, char** argv) { // Se elimina la condición de que el algoritm
 #pragma omp parallel for
                     for (int i = 0; i < alphas.size(); ++i) {
                         int idThread = omp_get_thread_num();
-                        if (paralDuraciones[idThread] < maxTime) {
+                        if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
                             ++paralNIter[idThread];
                             Alpha& a = paralAlphas[idThread][i];
                             Container C(C0, true);
@@ -5146,7 +5913,7 @@ int main(int argc, char** argv) { // Se elimina la condición de que el algoritm
 #pragma omp parallel for
                     for (int i = 0; i < alphas.size(); ++i) {
                         int idThread = omp_get_thread_num();
-                        if (paralDuraciones[idThread] < maxTime) {
+                        if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
                             ++paralNIter[idThread];
                             Alpha& a = paralAlphas[idThread][i];
                             Container C(C0, true);
@@ -5193,7 +5960,7 @@ int main(int argc, char** argv) { // Se elimina la condición de que el algoritm
 #pragma omp parallel for
                     for (int i = 0; i < alphas.size(); ++i) {
                         int idThread = omp_get_thread_num();
-                        if (paralDuraciones[idThread] < maxTime) {
+                        if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
                             ++paralNIter[idThread];
                             Alpha& a = paralAlphas[idThread][i];
                             Container C(C0, true);
@@ -5238,7 +6005,7 @@ int main(int argc, char** argv) { // Se elimina la condición de que el algoritm
 #pragma omp parallel for
                     for (int i = 0; i < alphas.size(); ++i) {
                         int idThread = omp_get_thread_num();
-                        if (paralDuraciones[idThread] < maxTime) { 
+                        if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
                             ++paralNIter[idThread];
                             Alpha& a = paralAlphas[idThread][i];
                             Container C(C0, true);
@@ -5283,184 +6050,198 @@ int main(int argc, char** argv) { // Se elimina la condición de que el algoritm
 
             // Resto de la metaheurística
 
+            UpdateTime();
             incumbente = *max_element(paralIncumbente.begin(), paralIncumbente.end());
             if (duracion >= maxTime || !incumbente.hayCajasPorEmpacar) {
-                WriteData(ins, repeticion, (int)accumulate(paralNIter.begin(), paralNIter.end(), 0), nThreads, maxTime);
+                WriteData(ins, repeticion, (int)accumulate(paralNIter.begin(), paralNIter.end(), 0), nThreads, (int)maxTime);
                 continue;
             }
+            int maxIter = 100000;
             if (r_multidrop > 0) {
                 if (r_maxPresionItems) {
+                    while (duracion < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
 #pragma omp parallel for
-                    for (int i = 0; i < maxIter; ++i) {
-                        int idThread = omp_get_thread_num();
-                        if (paralDuraciones[idThread] < maxTime) {
-                            ++paralNIter[idThread];
-                            vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
-                            Container C(C0, true);
-                            C.alpha = (*a).val;
-                            C.Constructivo_Multidrop_Presion();
-                            ActualizarAlpha(*a, C.utilizacion);
-                            int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
-                            if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
-                                paralIncumbente[idThread] = Container(C, false);
-                                paralThreshold_val.push_back(C.utilizacion);
-                            }
-                            if (C.utilizacion > BestUtil) {
-
-                                // Búsqueda local
-
-                                C.RemoverPiezas_Multidrop_Presion();
-                                C.ConstructivoDeterministico_Multidrop_Presion();
+                        for (int i = 0; i < maxIter; ++i) {
+                            int idThread = omp_get_thread_num();
+                            if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                                ++paralNIter[idThread];
+                                vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
+                                Container C(C0, true);
+                                C.alpha = (*a).val;
+                                C.Constructivo_Multidrop_Presion();
                                 ActualizarAlpha(*a, C.utilizacion);
+                                int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
                                 if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
                                     paralIncumbente[idThread] = Container(C, false);
                                     paralThreshold_val.push_back(C.utilizacion);
                                 }
-                                paralThreshold_iter[idThread] = 0;
-                            }
-                            else {
-                                ++paralThreshold_iter[idThread];
-                                if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                if (C.utilizacion > BestUtil) {
+
+                                    // Búsqueda local
+
+                                    C.RemoverPiezas_Multidrop_Presion();
+                                    C.ConstructivoDeterministico_Multidrop_Presion();
+                                    ActualizarAlpha(*a, C.utilizacion);
+                                    if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                                        paralIncumbente[idThread] = Container(C, false);
+                                        paralThreshold_val.push_back(C.utilizacion);
+                                    }
                                     paralThreshold_iter[idThread] = 0;
-                                    paralHolguraMultiplicador[idThread] *= 0.8;
                                 }
+                                else {
+                                    ++paralThreshold_iter[idThread];
+                                    if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                        paralThreshold_iter[idThread] = 0;
+                                        paralHolguraMultiplicador[idThread] *= 0.8;
+                                    }
+                                }
+
+                                // Parar por tiempo
+
+                                UpdateTimeParal(paralDuraciones[idThread]);
                             }
-
-                            // Parar por tiempo
-
-                            UpdateTimeParal(paralDuraciones[idThread]);
                         }
+                        UpdateTime();
                     }
                 }
                 else {
+                    while (duracion < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
 #pragma omp parallel for
-                    for (int i = 0; i < maxIter; ++i) {
-                        int idThread = omp_get_thread_num();
-                        if (paralDuraciones[idThread] < maxTime) {
-                            ++paralNIter[idThread];
-                            vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
-                            Container C(C0, true);
-                            C.alpha = (*a).val;
-                            C.Constructivo_Multidrop();
-                            ActualizarAlpha(*a, C.utilizacion);
-                            int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
-                            if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
-                                paralIncumbente[idThread] = Container(C, false);
-                                paralThreshold_val.push_back(C.utilizacion);
-                            }
-                            if (C.utilizacion > BestUtil) {
-
-                                // Búsqueda local
-
-                                C.RemoverPiezas_Multidrop();
-                                C.ConstructivoDeterministico_Multidrop();
+                        for (int i = 0; i < maxIter; ++i) {
+                            int idThread = omp_get_thread_num();
+                            if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                                ++paralNIter[idThread];
+                                vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
+                                Container C(C0, true);
+                                C.alpha = (*a).val;
+                                C.Constructivo_Multidrop();
                                 ActualizarAlpha(*a, C.utilizacion);
+                                int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
                                 if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
                                     paralIncumbente[idThread] = Container(C, false);
                                     paralThreshold_val.push_back(C.utilizacion);
                                 }
-                                paralThreshold_iter[idThread] = 0;
-                            }
-                            else {
-                                ++paralThreshold_iter[idThread];
-                                if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                if (C.utilizacion > BestUtil) {
+
+                                    // Búsqueda local
+
+                                    C.RemoverPiezas_Multidrop();
+                                    C.ConstructivoDeterministico_Multidrop();
+                                    ActualizarAlpha(*a, C.utilizacion);
+                                    if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                                        paralIncumbente[idThread] = Container(C, false);
+                                        paralThreshold_val.push_back(C.utilizacion);
+                                    }
                                     paralThreshold_iter[idThread] = 0;
-                                    paralHolguraMultiplicador[idThread] *= 0.8;
                                 }
+                                else {
+                                    ++paralThreshold_iter[idThread];
+                                    if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                        paralThreshold_iter[idThread] = 0;
+                                        paralHolguraMultiplicador[idThread] *= 0.8;
+                                    }
+                                }
+
+                                // Parar por tiempo
+
+                                UpdateTimeParal(paralDuraciones[idThread]);
                             }
-
-                            // Parar por tiempo
-
-                            UpdateTimeParal(paralDuraciones[idThread]);
                         }
+                        UpdateTime();
                     }
                 }
             }
             else {
                 if (r_maxPresionItems) {
+                    while (duracion < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
 #pragma omp parallel for
-                    for (int i = 0; i < maxIter; ++i) {
-                        int idThread = omp_get_thread_num();
-                        if (paralDuraciones[idThread] < maxTime) {
-                            ++paralNIter[idThread];
-                            vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
-                            Container C(C0, true);
-                            C.alpha = (*a).val;
-                            C.Constructivo_Presion();
-                            ActualizarAlpha(*a, C.utilizacion);
-                            int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
-                            if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
-                                paralIncumbente[idThread] = Container(C, false);
-                                paralThreshold_val.push_back(C.utilizacion);
-                            }
-                            if (C.utilizacion > BestUtil) {
-
-                                // Búsqueda local
-
-                                C.RemoverPiezas_Presion();
-                                C.ConstructivoDeterministico_Presion();
+                        for (int i = 0; i < maxIter; ++i) {
+                            int idThread = omp_get_thread_num();
+                            if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                                ++paralNIter[idThread];
+                                vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
+                                Container C(C0, true);
+                                C.alpha = (*a).val;
+                                C.Constructivo_Presion();
                                 ActualizarAlpha(*a, C.utilizacion);
+                                int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
                                 if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
                                     paralIncumbente[idThread] = Container(C, false);
                                     paralThreshold_val.push_back(C.utilizacion);
                                 }
-                                paralThreshold_iter[idThread] = 0;
-                            }
-                            else {
-                                ++paralThreshold_iter[idThread];
-                                if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                if (C.utilizacion > BestUtil) {
+
+                                    // Búsqueda local
+
+                                    C.RemoverPiezas_Presion();
+                                    C.ConstructivoDeterministico_Presion();
+                                    ActualizarAlpha(*a, C.utilizacion);
+                                    if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                                        paralIncumbente[idThread] = Container(C, false);
+                                        paralThreshold_val.push_back(C.utilizacion);
+                                    }
                                     paralThreshold_iter[idThread] = 0;
-                                    paralHolguraMultiplicador[idThread] *= 0.8;
                                 }
+                                else {
+                                    ++paralThreshold_iter[idThread];
+                                    if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                        paralThreshold_iter[idThread] = 0;
+                                        paralHolguraMultiplicador[idThread] *= 0.8;
+                                    }
+                                }
+
+                                // Parar por tiempo
+
+                                UpdateTimeParal(paralDuraciones[idThread]);
                             }
-
-                            // Parar por tiempo
-
-                            UpdateTimeParal(paralDuraciones[idThread]);
                         }
+                        UpdateTime();
                     }
                 }
                 else {
+                    while (duracion < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
 #pragma omp parallel for
-                    for (int i = 0; i < maxIter; ++i) {
-                        int idThread = omp_get_thread_num();
-                        if (paralDuraciones[idThread] < maxTime) {
-                            ++paralNIter[idThread];
-                            vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
-                            Container C(C0, true);
-                            C.alpha = (*a).val;
-                            C.Constructivo();
-                            ActualizarAlpha(*a, C.utilizacion);
-                            int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
-                            if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
-                                paralIncumbente[idThread] = Container(C, false);
-                                paralThreshold_val.push_back(C.utilizacion);
-                            }
-                            if (C.utilizacion > BestUtil) {
-
-                                // Búsqueda local
-
-                                C.RemoverPiezas();
-                                C.ConstructivoDeterministico();
+                        for (int i = 0; i < maxIter; ++i) {
+                            int idThread = omp_get_thread_num();
+                            if (paralDuraciones[idThread] < maxTime && *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) < MaxUtilizacionPosible) {
+                                ++paralNIter[idThread];
+                                vector<Alpha>::iterator a = DeterminarAlphaParal(paralAlphas[idThread]);
+                                Container C(C0, true);
+                                C.alpha = (*a).val;
+                                C.Constructivo();
                                 ActualizarAlpha(*a, C.utilizacion);
+                                int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
                                 if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
                                     paralIncumbente[idThread] = Container(C, false);
                                     paralThreshold_val.push_back(C.utilizacion);
                                 }
-                                paralThreshold_iter[idThread] = 0;
-                            }
-                            else {
-                                ++paralThreshold_iter[idThread];
-                                if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                if (C.utilizacion > BestUtil) {
+
+                                    // Búsqueda local
+
+                                    C.RemoverPiezas();
+                                    C.ConstructivoDeterministico();
+                                    ActualizarAlpha(*a, C.utilizacion);
+                                    if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
+                                        paralIncumbente[idThread] = Container(C, false);
+                                        paralThreshold_val.push_back(C.utilizacion);
+                                    }
                                     paralThreshold_iter[idThread] = 0;
-                                    paralHolguraMultiplicador[idThread] *= 0.8;
                                 }
+                                else {
+                                    ++paralThreshold_iter[idThread];
+                                    if (paralThreshold_iter[idThread] >= threshold_MaxIter) {
+                                        paralThreshold_iter[idThread] = 0;
+                                        paralHolguraMultiplicador[idThread] *= 0.8;
+                                    }
+                                }
+
+                                // Parar por tiempo
+
+                                UpdateTimeParal(paralDuraciones[idThread]);
                             }
-
-                            // Parar por tiempo
-
-                            UpdateTimeParal(paralDuraciones[idThread]);
                         }
+                        UpdateTime();   
                     }
                 }
             }
@@ -5468,10 +6249,456 @@ int main(int argc, char** argv) { // Se elimina la condición de que el algoritm
             // Escribir resultados
 
             incumbente = *max_element(paralIncumbente.begin(), paralIncumbente.end());
-            WriteData(ins, repeticion, (int)accumulate(paralNIter.begin(), paralNIter.end(), 0), nThreads, maxTime);
+            WriteData(ins, repeticion, (int)accumulate(paralNIter.begin(), paralNIter.end(), 0), nThreads, (int)maxTime);
         }
     }
     return 0;
 }
+*/
+// Single Thread
+/*
+int main(int argc, char** argv) {
+
+    // Parámetros
+
+    string ins = "";
+    double maxTime = 60;
+    int iterIni = 1;
+    int iterFin = 1;// Inclusivo
+    int insIni = 0;
+    int insFin = 0; // Inclusivo
+    for (int i = 1; i < argc - 1; i += 2) {
+        if (argc - 1 >= i + 1) {
+            if (string(argv[i]) == "-ins") ins = argv[i + 1];
+            else if (string(argv[i]) == "-maxTime") maxTime = atof(argv[i + 1]);
+            else if (string(argv[i]) == "-estabilidad") r_estabilidad = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-juntar") r_juntarEspacios = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-ini") iterIni = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-fin") iterFin = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-insIni") insIni = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-insFin") insFin = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-presion") {
+                if (string(argv[i + 1]) == "1") r_maxPresionItems = true;
+                else r_maxPresionItems = false;
+            }
+            else if (string(argv[i]) == "-multidrop") r_multidrop = atoi(argv[i + 1]);
+            else {
+                cout << "Mal en par�metros" << endl;
+                return 0;
+            }
+        }
+    }
+
+    // Determinar los clientes
+
+    string ins0 = ins;
+    vector<string> misInstancias({ "" });
+    if (insFin - insIni >= 1) {
+        misInstancias.clear();
+        for (int i = insIni; i <= insFin; ++i) {
+            misInstancias.push_back(to_string(i));
+        }
+    }
+
+    // Ciclo de repeticiones
+
+    for (vector<string>::iterator s_it = misInstancias.begin(); s_it < misInstancias.end(); ++s_it) {
+        ins = ins0;
+        if ((*s_it) != "") {
+            ins.replace(ins.find("__"), 2, "_" + *s_it + "_");
+        }
+        for (int repeticion = iterIni; repeticion <= iterFin; ++repeticion) {
+            ReiniciarVariables();
+
+            // Leer datos
+
+            ReadData2(ins);
+            int numIter = 0;
+            incumbente = Container(C0, false);
+            errorArea = 0.5 / (double)(ContenedorDimx * ContenedorDimy);
+            double totalPesoAcum = 0;
+            int j = 1;
+            for (vector<double>::iterator p_it = pesos_acum.begin(); p_it < pesos_acum.end(); ++p_it, ++j) {
+                (*p_it) = 1.0 / (double)j;
+                totalPesoAcum += *p_it;
+            }
+            for (vector<double>::iterator p_it = pesos_acum.begin(); p_it < pesos_acum.end(); ++p_it) {
+                (*p_it) /= totalPesoAcum;
+            }
+            for (vector<double>::iterator p_it = pesos_acum.begin() + 1; p_it < pesos_acum.end(); ++p_it) {
+                (*p_it) += *(p_it - 1);
+            }
+
+            // Total Volumen
+
+            int nCajas = 0;
+            nCajas = accumulate(C0.boxest.begin(), C0.boxest.end(), nCajas, [](int const& resp, BoxType const& bt)->int {return resp + bt.cantidad0; });
+            totalVolumen = 0;
+            for (vector<BoxType>::iterator b_it = C0.boxest.begin(); b_it < C0.boxest.end(); ++b_it) {
+                totalVolumen += (*b_it).cantidad0 * (*b_it).volumenReal;
+            }
+            totalVolumen /= 100.0;
+            if (r_multidrop > 0 && totalVolumen > ContenedorVol) { // Se eliminan los clientes que no alcanzan a empacarse por el volumen de los anteriores
+                int miVol = 0;
+                vector<BoxType>::iterator b_it = C0.boxest.begin();
+                int clienteHasta = 0;
+                for (; b_it < C0.boxest.end(); ++b_it) {
+                    miVol += (*b_it).cantidad0 * (*b_it).volumenReal;
+                    if (miVol >= ContenedorVol) {
+                        clienteHasta = (*b_it).cliente;
+                        break;
+                    }
+                }
+                for (; b_it < C0.boxest.end(); ++b_it) {
+                    if ((*b_it).cliente > clienteHasta) {
+                        C0.boxest.resize(distance(C0.boxest.begin(), b_it - 1));
+                        break;
+                    }
+                }
+            }
+
+            // Adquisición de datos iniciales
+
+            if (r_multidrop > 0) {
+                if (r_maxPresionItems) {
+                    for (int i = 0; i < alphas.size(); ++i) {
+                        ++numIter;
+                        Alpha& a = alphas[i];
+                        Container C(C0, true);
+                        C.alpha = a.val;
+                        C.Constructivo_Multidrop_Presion();
+                        ActualizarAlpha(a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop_Presion();
+                            C.ConstructivoDeterministico_Multidrop_Presion();
+                            ActualizarAlpha(a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTime();
+                        if (duracion > maxTime) {
+                            break;
+                        }
+                    }
+                }
+                else {
+                    for (int i = 0; i < alphas.size(); ++i) {
+                        ++numIter;
+                        Alpha& a = alphas[i];
+                        Container C(C0, true);
+                        C.alpha = a.val;
+                        C.Constructivo_Multidrop();
+                        ActualizarAlpha(a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop();
+                            C.ConstructivoDeterministico_Multidrop();
+                            ActualizarAlpha(a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTime();
+                        if (duracion > maxTime) {
+                            break;
+                        }
+                    }
+                }
+            }
+            else {
+                if (r_maxPresionItems) {
+                    for (int i = 0; i < alphas.size(); ++i) {
+                        ++numIter;
+                        Alpha& a = alphas[i];
+                        Container C(C0, true);
+                        C.alpha = a.val;
+                        C.Constructivo_Presion();
+                        ActualizarAlpha(a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Presion();
+                            C.ConstructivoDeterministico_Presion();
+                            ActualizarAlpha(a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTime();
+                        if (duracion > maxTime) {
+                            break;
+                        }
+                    }
+                }
+                else {
+                    for (int i = 0; i < alphas.size(); ++i) {
+                        ++numIter;
+                        Alpha& a = alphas[i];
+                        Container C(C0, true);
+                        C.alpha = a.val;
+                        C.Constructivo();
+                        ActualizarAlpha(a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas();
+                            C.ConstructivoDeterministico();
+                            ActualizarAlpha(a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTime();
+                        if (duracion > maxTime) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Resto de la metaheurística
+
+            if (duracion > maxTime || !incumbente.hayCajasPorEmpacar) {
+                WriteData(ins, repeticion, numIter, 1, 0);
+                continue;
+            }
+            if (r_multidrop > 0) {
+                if (r_maxPresionItems) {
+                    while (duracion < maxTime) {
+                        ++numIter;
+                        vector<Alpha>::iterator a = DeterminarAlpha();
+                        Container C = Container(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Multidrop_Presion();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop_Presion();
+                            C.ConstructivoDeterministico_Multidrop_Presion();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Actualizar tiempo
+
+                        UpdateTime();
+                    }
+                }
+                else {
+                    while (duracion < maxTime) {
+                        ++numIter;
+                        vector<Alpha>::iterator a = DeterminarAlpha();
+                        Container C = Container(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Multidrop();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop();
+                            C.ConstructivoDeterministico_Multidrop();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Actualizar tiempo
+
+                        UpdateTime();
+                    }
+                }
+            }
+            else {
+                if (r_maxPresionItems) {
+                    while (duracion < maxTime) {
+                        ++numIter;
+                        vector<Alpha>::iterator a = DeterminarAlpha();
+                        Container C = Container(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Presion();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Presion();
+                            C.ConstructivoDeterministico_Presion();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por tiempo
+
+                        UpdateTime();
+                    }
+                }
+                else {
+                    while (duracion < maxTime) {
+                        ++numIter;
+                        vector<Alpha>::iterator a = DeterminarAlpha();
+                        Container C = Container(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas();
+                            C.ConstructivoDeterministico();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Actualizar tiempo
+
+                        UpdateTime();
+                    }
+                }
+            }
+
+            // Escribir resultados
+
+            //cout << "total iteraciones = " << to_string(holi) << endl;
+            WriteData(ins, repeticion, numIter, 1, 0);
+        }
+    }
+    return 0;
+}
+*/
 
 //END
