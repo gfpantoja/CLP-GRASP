@@ -24,7 +24,7 @@ static double errorArea = 100;
 static double tolerancia = 0; // tolerancia para que una caja esté dentro de polígono
 static auto tIni = chrono::high_resolution_clock::now();
 static double duracion = 0;
-//int holi = 0;
+int holi = 0;
 static int ContenedorDimx = 0;
 static int ContenedorDimy = 0;
 static int ContenedorDimz = 0;
@@ -1114,7 +1114,7 @@ public:
         poligono = p_pol;
         soportes = p_soportes;
     }
-    
+
     // Metodos
 
     void ActualizarCentroDeMasa(Soporte const& s) {
@@ -1536,8 +1536,21 @@ private:
         }
     }
     void ActualizarIndicesCajasDeEspacios() {
-        for (vector<MaximalSpace>::iterator e_it = espacios.begin(); e_it < espacios.end(); ++e_it) {
-            if ((*e_it).cambio) DeterminarIndicesCajasEspacio(e_it);
+        if (r_maxPresionItems && r_estabilidad == 1) { // Pueden haber espacios maximales que no estan soportados por ninguna caja y pueden ser eliminados
+            for (int i = (int)espacios.size() - 1; i >= 0; --i) {
+                vector<MaximalSpace>::iterator e_it = espacios.begin() + i;
+                if ((*e_it).cambio) {
+                    DeterminarIndicesCajasEspacio(e_it);
+                    if ((*e_it).indCajas.size() == 0 && (*e_it).z1 > 0) {
+                        espacios.erase(e_it);
+                    }
+                }
+            }
+        }
+        else {
+            for (vector<MaximalSpace>::iterator e_it = espacios.begin(); e_it < espacios.end(); ++e_it) {
+                if ((*e_it).cambio) DeterminarIndicesCajasEspacio(e_it);
+            }
         }
     }
     void JuntarEspacios(int desde) {
@@ -1545,16 +1558,17 @@ private:
         // Eliminar espacios contenidos
 
         for (int i = (int)espacios.size() - 1; i >= desde; --i) {
-            MaximalSpace& e2 = espacios[i];
+            MaximalSpace e2 = espacios[i];
+            int viejosBorrados = 0;
             for (int j = i - 1; j >= 0; --j) {
-                MaximalSpace& e1 = espacios[j];
+                MaximalSpace e1 = espacios[j];
 
                 // Ver si e1 contiene a e2
 
                 if (e1.z1 <= e2.z1 && e2.z2 <= e1.z2) {
                     if (e1.y1 <= e2.y1 && e2.y2 <= e1.y2) {
                         if (e1.x1 <= e2.x1 && e2.x2 <= e1.x2) {
-                            espacios.erase(espacios.begin() + i);
+                            espacios.erase(espacios.begin() + (i - viejosBorrados));
                             break;
                         }
                     }
@@ -1566,15 +1580,17 @@ private:
                     if (e2.y1 <= e1.y1 && e1.y2 <= e2.y2) {
                         if (e2.x1 <= e1.x1 && e1.x2 <= e2.x2) {
                             espacios.erase(espacios.begin() + j);
-                            break;
+                            ++viejosBorrados;
+                            //break;
                         }
                     }
                 }
             }
+            i -= viejosBorrados;
         }
 
         // Juntar y expandir
-
+        ++holi;
         if (r_juntarEspacios == 1) { // Se juntan espacios pero no se expanden
             if (r_estabilidad == 0) {
                 bool seguir = true;
@@ -2299,7 +2315,7 @@ private:
                             }
                         }
                     }
-                    
+
                     // Determinar polígono
 
                     if (intersecciones.size() > 0) {
@@ -2423,7 +2439,7 @@ private:
             for (int i = 0; i < hasta; ++i) {
                 PackedBox c = copias[i];
                 if (c.z1 == b.z1) {
-                    int siguiente = copias.size(); 
+                    int siguiente = copias.size();
                     while (c.z1 > 0) {
                         for (vector<Soporte>::iterator s_it = c.soportes.begin(); s_it < c.soportes.end(); ++s_it) {
                             bool nuevaPieza = true;
@@ -3963,7 +3979,7 @@ private:
     }
 
     // Empacar
-    
+
     void ActualizarArbolPresion(int const& nUltimasPiezas) {
 
         // Determinar arbol de actualización
@@ -4115,7 +4131,7 @@ private:
         }
     }
     void GenerarPiezasEmpacadas(Bloque& b) {
-        
+
         // Generar las piezas empacadas
 
         int desde = empacados.size();
@@ -4279,6 +4295,9 @@ private:
         }
         EliminarEspaciosMinD();
         ActualizarIndicesCajasDeEspacios();
+        if (holi == 16) {
+            hayCajasPorEmpacar = false;
+        }
     }
 
     // Constructivo
@@ -4489,7 +4508,7 @@ public:
     void Constructivo_Multidrop_Presion() {
         //++holi;
         while ((int)espacios.size() > 0 && hayCajasPorEmpacar) { // Falta poner restricción si hay algún tipo con caja
-            
+
             // Se selecciona el espacio maximal
 
             vector<MaximalSpace>::iterator mejorEspacio = espacios.begin();
@@ -5217,7 +5236,7 @@ void WriteData(string const& ins, int const& repeticion, int const& totalIteraci
     else filePath += "_P0";
     filePath += "_S" + to_string(r_estabilidad);
     filePath += "_EM" + to_string(r_juntarEspacios);
-    filePath += "_mt_rep" + to_string(repeticion);
+    filePath += "_st_rep" + to_string(repeticion);
     filePath += "_nt" + to_string(th);
     filePath += "_d" + to_string(dur);
     filePath += ".txt";
@@ -5268,11 +5287,12 @@ void ReiniciarVariables() {
     alphas = vector<Alpha>({ Alpha(0.1), Alpha(0.2), Alpha(0.3), Alpha(0.4), Alpha(0.5), Alpha(0.6), Alpha(0.7), Alpha(0.8), Alpha(0.9), Alpha(1.0) });
     tIni = chrono::high_resolution_clock::now();
     duracion = 0;
-    generator.seed(chrono::system_clock::now().time_since_epoch().count());
-    //generator.seed(123);
+    //generator.seed(chrono::system_clock::now().time_since_epoch().count());
+    generator.seed(43);
 }
 
 // Main
+
 int main(int argc, char** argv) {
 
     // Parámetros
@@ -5374,6 +5394,11 @@ int main(int argc, char** argv) {
                     C.alpha = a.val;
                     C.Constructivo_Multidrop_Presion();
                     ActualizarAlpha(a, C.utilizacion);
+                    if (holi == 16) {
+                        incumbente = C;
+                        WriteData(ins + "PRUEBA", 0, (int)accumulate(paralNIter.begin(), paralNIter.end(), 0), nThreads, (int)maxTime);
+                        return 1;
+                    }
                     int BestUtil = *max_element(paralThreshold_val.begin(), paralThreshold_val.end()) * paralHolguraMultiplicador[idThread];
                     if (C.utilizacion > paralIncumbente[idThread].utilizacion) {
                         paralIncumbente[idThread] = Container(C, false);
@@ -5749,9 +5774,10 @@ int main(int argc, char** argv) {
     WriteData(ins, 0, (int)accumulate(paralNIter.begin(), paralNIter.end(), 0), nThreads, (int)maxTime);
     return 0;
 }
+
 // Multi Thread
 /*
-int main(int argc, char** argv) { 
+int main(int argc, char** argv) {
 
     // Parámetros
 
@@ -6241,7 +6267,7 @@ int main(int argc, char** argv) {
                                 UpdateTimeParal(paralDuraciones[idThread]);
                             }
                         }
-                        UpdateTime();   
+                        UpdateTime();
                     }
                 }
             }
@@ -6700,5 +6726,429 @@ int main(int argc, char** argv) {
     return 0;
 }
 */
+// Single Thread MLBR
+/*
+int main(int argc, char** argv) {
 
+    // Parámetros
+
+    string ins = "";
+    int iterIni = 1;
+    int iterFin = 1;// Inclusivo
+    int insIni = 0;
+    int insFin = 0; // Inclusivo
+    int maxIter = 50000;
+    for (int i = 1; i < argc - 1; i += 2) {
+        if (argc - 1 >= i + 1) {
+            if (string(argv[i]) == "-ins") ins = argv[i + 1];
+            else if (string(argv[i]) == "-maxIter") maxIter = atof(argv[i + 1]);
+            else if (string(argv[i]) == "-estabilidad") r_estabilidad = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-juntar") r_juntarEspacios = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-ini") iterIni = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-fin") iterFin = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-insIni") insIni = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-insFin") insFin = atoi(argv[i + 1]);
+            else if (string(argv[i]) == "-presion") {
+                if (string(argv[i + 1]) == "1") r_maxPresionItems = true;
+                else r_maxPresionItems = false;
+            }
+            else if (string(argv[i]) == "-multidrop") r_multidrop = atoi(argv[i + 1]);
+            else {
+                cout << "Mal en par�metros" << endl;
+                return 0;
+            }
+        }
+    }
+
+    // Determinar los clientes
+
+    string ins0 = ins;
+    vector<string> misInstancias({ "" });
+    if (insFin - insIni >= 1) {
+        misInstancias.clear();
+        for (int i = insIni; i <= insFin; ++i) {
+            misInstancias.push_back(to_string(i));
+        }
+    }
+
+    // Ciclo de repeticiones
+
+    for (vector<string>::iterator s_it = misInstancias.begin(); s_it < misInstancias.end(); ++s_it) {
+        ins = ins0;
+        if ((*s_it) != "") {
+            ins.replace(ins.find("__"), 2, "_" + *s_it + "_");
+        }
+        for (int repeticion = iterIni; repeticion <= iterFin; ++repeticion) {
+            ReiniciarVariables();
+
+            // Leer datos
+
+            ReadData2(ins);
+            int numIter = 0;
+            incumbente = Container(C0, false);
+            errorArea = 0.5 / (double)(ContenedorDimx * ContenedorDimy);
+            double totalPesoAcum = 0;
+            int j = 1;
+            for (vector<double>::iterator p_it = pesos_acum.begin(); p_it < pesos_acum.end(); ++p_it, ++j) {
+                (*p_it) = 1.0 / (double)j;
+                totalPesoAcum += *p_it;
+            }
+            for (vector<double>::iterator p_it = pesos_acum.begin(); p_it < pesos_acum.end(); ++p_it) {
+                (*p_it) /= totalPesoAcum;
+            }
+            for (vector<double>::iterator p_it = pesos_acum.begin() + 1; p_it < pesos_acum.end(); ++p_it) {
+                (*p_it) += *(p_it - 1);
+            }
+
+            // Total Volumen
+
+            int nCajas = 0;
+            nCajas = accumulate(C0.boxest.begin(), C0.boxest.end(), nCajas, [](int const& resp, BoxType const& bt)->int {return resp + bt.cantidad0; });
+            totalVolumen = 0;
+            for (vector<BoxType>::iterator b_it = C0.boxest.begin(); b_it < C0.boxest.end(); ++b_it) {
+                totalVolumen += (*b_it).cantidad0 * (*b_it).volumenReal;
+            }
+            totalVolumen /= 100.0;
+            if (r_multidrop > 0 && totalVolumen > ContenedorVol) { // Se eliminan los clientes que no alcanzan a empacarse por el volumen de los anteriores
+                int miVol = 0;
+                vector<BoxType>::iterator b_it = C0.boxest.begin();
+                int clienteHasta = 0;
+                for (; b_it < C0.boxest.end(); ++b_it) {
+                    miVol += (*b_it).cantidad0 * (*b_it).volumenReal;
+                    if (miVol >= ContenedorVol) {
+                        clienteHasta = (*b_it).cliente;
+                        break;
+                    }
+                }
+                for (; b_it < C0.boxest.end(); ++b_it) {
+                    if ((*b_it).cliente > clienteHasta) {
+                        C0.boxest.resize(distance(C0.boxest.begin(), b_it - 1));
+                        break;
+                    }
+                }
+            }
+
+            // Adquisición de datos iniciales
+
+            if (r_multidrop > 0) {
+                if (r_maxPresionItems) {
+                    for (int i = 0; i < alphas.size(); ++i) {
+                        ++numIter;
+                        Alpha& a = alphas[i];
+                        Container C(C0, true);
+                        C.alpha = a.val;
+                        C.Constructivo_Multidrop_Presion();
+                        ActualizarAlpha(a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop_Presion();
+                            C.ConstructivoDeterministico_Multidrop_Presion();
+                            ActualizarAlpha(a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por iter
+
+                        if (numIter >= maxIter) {
+                            break;
+                        }
+                    }
+                }
+                else {
+                    for (int i = 0; i < alphas.size(); ++i) {
+                        ++numIter;
+                        Alpha& a = alphas[i];
+                        Container C(C0, true);
+                        C.alpha = a.val;
+                        C.Constructivo_Multidrop();
+                        ActualizarAlpha(a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop();
+                            C.ConstructivoDeterministico_Multidrop();
+                            ActualizarAlpha(a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por iter
+
+                        if (numIter >= maxIter) {
+                            break;
+                        }
+                    }
+                }
+            }
+            else {
+                if (r_maxPresionItems) {
+                    for (int i = 0; i < alphas.size(); ++i) {
+                        ++numIter;
+                        Alpha& a = alphas[i];
+                        Container C(C0, true);
+                        C.alpha = a.val;
+                        C.Constructivo_Presion();
+                        ActualizarAlpha(a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Presion();
+                            C.ConstructivoDeterministico_Presion();
+                            ActualizarAlpha(a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por iter
+
+                        if (numIter >= maxIter) {
+                            break;
+                        }
+                    }
+                }
+                else {
+                    for (int i = 0; i < alphas.size(); ++i) {
+                        ++numIter;
+                        Alpha& a = alphas[i];
+                        Container C(C0, true);
+                        C.alpha = a.val;
+                        C.Constructivo();
+                        ActualizarAlpha(a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas();
+                            C.ConstructivoDeterministico();
+                            ActualizarAlpha(a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+
+                        // Parar por iter
+
+                        if (numIter >= maxIter) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Resto de la metaheurística
+
+            if (numIter >= maxIter || !incumbente.hayCajasPorEmpacar) {
+                WriteData(ins, repeticion, numIter, 1, 0);
+                continue;
+            }
+            if (r_multidrop > 0) {
+                if (r_maxPresionItems) {
+                    while (numIter < maxIter) {
+                        ++numIter;
+                        vector<Alpha>::iterator a = DeterminarAlpha();
+                        Container C = Container(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Multidrop_Presion();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop_Presion();
+                            C.ConstructivoDeterministico_Multidrop_Presion();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+                    }
+                }
+                else {
+                    while (numIter < maxIter) {
+                        ++numIter;
+                        vector<Alpha>::iterator a = DeterminarAlpha();
+                        Container C = Container(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Multidrop();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Multidrop();
+                            C.ConstructivoDeterministico_Multidrop();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+                    }
+                }
+            }
+            else {
+                if (r_maxPresionItems) {
+                    while (numIter < maxIter) {
+                        ++numIter;
+                        vector<Alpha>::iterator a = DeterminarAlpha();
+                        Container C = Container(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo_Presion();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas_Presion();
+                            C.ConstructivoDeterministico_Presion();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+                    }
+                }
+                else {
+                    while (numIter < maxIter) {
+                        ++numIter;
+                        vector<Alpha>::iterator a = DeterminarAlpha();
+                        Container C = Container(C0, true);
+                        C.alpha = (*a).val;
+                        C.Constructivo();
+                        ActualizarAlpha(*a, C.utilizacion);
+                        int valorActualizacion = ActualizarIncumbente(C);
+                        if (valorActualizacion == -1) {
+                            break;
+                        }
+                        if (valorActualizacion == 1 || C.utilizacion > threshold_val) {
+
+                            // Búsqueda local
+
+                            C.RemoverPiezas();
+                            C.ConstructivoDeterministico();
+                            ActualizarAlpha(*a, C.utilizacion);
+                            if (ActualizarIncumbente(C) == -1) {
+                                break;
+                            }
+                            threshold_val = incumbente.utilizacion;
+                            threshold_Iter = 0;
+                        }
+                        else {
+                            ++threshold_Iter;
+                            if (threshold_Iter == threshold_MaxIter) {
+                                threshold_val *= 0.8;
+                                threshold_Iter = 0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Escribir resultados
+
+            //cout << "total iteraciones = " << to_string(holi) << endl;
+            WriteData(ins, repeticion, numIter, 1, 0);
+        }
+    }
+    return 0;
+}
+*/
 //END
